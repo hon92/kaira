@@ -208,6 +208,8 @@ class InfoBox(gtk.EventBox):
         self.show_request = False
         self.mouse_x = 0
         self.mouse_y = 0
+        self.modify_bg(gtk.STATE_NORMAL, gtk.gdk.color_parse("black"))
+        self.label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("white"))
 
     def hide_box(self, w, e):
         self.show_box = False
