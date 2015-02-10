@@ -27,8 +27,6 @@ import clang.cindex as clanglib
 from clangparser import ClangParser
 from completionprovider import CompletionProvider
 from proposalitem import ProposalItem
-import time
-import gtksourceview2
 
 
 class ResultKindFilter():
@@ -470,12 +468,10 @@ class Completion(gobject.GObject):
 
         if cursor:
             referenced = cursor.referenced
-        if not referenced or not(cursor.kind.is_expression() or cursor.kind.is_declaration()):
+        if not referenced:#or not(cursor.kind.is_expression() or cursor.kind.is_declaration()):
             return
 
-        old_text = cursor.spelling
-        if not old_text:
-            old_text = cursor.displayname
+        old_text = referenced.spelling
 
         dialog = gtk.Dialog("Insert new name", None, gtk.DIALOG_MODAL,
                             (gtk.STOCK_OK, gtk.RESPONSE_ACCEPT, gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL))
@@ -497,9 +493,7 @@ class Completion(gobject.GObject):
                     info_label.set_text("Invalid variable name")
                 elif new_text == old_text:
                     dialog.destroy()
-                elif not self.is_valid_refactor(referenced, new_text):
-                    info_label.set_text("Variable \"" + new_text + "\" already exists")
-                else:
+                elif self.is_valid_refactor(referenced, new_text, info_label):
                     info_label.set_text("Refactoring in progress...")
                     dialog.show_all()
                     gtk.main_iteration_do()
@@ -508,7 +502,7 @@ class Completion(gobject.GObject):
                         #Parse all project
                         self.rename_code_in_nodes(referenced, old_text, new_text)
                     else:
-                        self.rename_code_in_node(self.code_editor, referenced, old_text, new_text)
+                        self.rename_code_in_node(self.code_editor, cursor, old_text, new_text)
                     self.parse_source_code()
                     dialog.destroy()
             else:
@@ -570,9 +564,10 @@ class Completion(gobject.GObject):
             enditer.forward_chars(ec)
             self.view.buffer.apply_tag_by_name("warning",startiter,enditer)
 
-    def is_valid_refactor(self, reference_cursor, new_token_name):
+    def is_valid_refactor(self, reference_cursor, new_token_name, info_label):
         self.closest = None
         self.contain = False
+        self.error_message = None
         semantic_parent = reference_cursor.semantic_parent
 
         def find_closest_comp(cursor, ref_cursor):
@@ -585,9 +580,22 @@ class Completion(gobject.GObject):
                 if cursor.displayname == self.clang.tu.spelling:
                     self.closest = cursor
                     return
+                if cursor.kind.from_param() in [2, 3, 4]:
+                    if self.clang.type == "node":
+                        s, e = self.code_editor.get_section_iters("")
+                        ref_loc = cursor.location
+                        ref_line = ref_loc.line - self.clang.get_line_offset() - s.get_line() - 1
+                        if ref_line < s.get_line() and ref_line >=0: #test if var for rafactoring is in Vars struct in node
+                            self.closest = None
+                            self.error_message = "Variable \"" + new_token_name + "\" is inside Vars struct in node"
+                            return
+
+                    self.closest = cursor
+                    return
+
                 for c in cursor.get_children():
                     kind_value = c.kind.from_param()
-                    if kind_value >= 201 and kind_value <= 209:
+                    if (kind_value >= 201 and kind_value <= 209) or kind_value in [2, 3, 4]:
                         source_range = c.extent
                         curr_start_line = source_range.start.line - 1
                         curr_start_column = source_range.start.column - 1
@@ -613,16 +621,26 @@ class Completion(gobject.GObject):
 
         find_closest_comp(semantic_parent, reference_cursor)
         valid = False
-        if self.closest:
+        if not self.error_message and self.closest:
             is_same_token_inside(self.closest, new_token_name)
         else:
+            if self.error_message:
+                info_label.set_text(self.error_message)
+            else:
+                info_label.set_text("Error")
             del self.closest
             del self.contain
+            del self.error_message
             return valid
 
         valid = self.closest and (not self.contain)
+        if self.contain:
+            self.error_message = "Variable \"" + new_token_name + "\" already exists"
+            info_label.set_text(self.error_message)
+
         del self.closest
         del self.contain
+        del self.error_message
         return valid
 
     def rename_code_in_node(self, node, referenced_cursor, old_name, new_name):
@@ -686,6 +704,15 @@ class Completion(gobject.GObject):
             ref = clanglib.Cursor.from_location(temp_tu, location)
             where = [] #SourceLocation where is place for new code
             self.find_cursor_uses(temp_tu, temp_tu.cursor, ref, where)
+
+            def location_sort(a, b):
+                if a.line < b.line:
+                    return -1
+                if a.line > b.line:
+                    return 1
+                return cmp(a.column, b.column)
+
+            where.sort(location_sort)
             self.rename_code_by_location(temp_buffer, where, new_name, old_name, 0)
 
             for info in node_info:
@@ -703,32 +730,61 @@ class Completion(gobject.GObject):
             end_iter_head.forward_to_line_end()
 
         new_head_code = temp_buffer.get_text(start_iter_head, end_iter_head)
-        self.project.set_head_code(new_head_code)
         window = self.app.window
+        reload_head = True
+
+        if self.clang.type == "header":
+            self.code_editor.set_text(new_head_code)
+            reload_head = False
+        else:
+            self.project.set_head_code(new_head_code)
 
         def reload_tab(tab):
             from codeedit import CodeEditor
 
             if(issubclass(tab.widget.__class__, CodeEditor)):
                 if(isinstance(tab.key, str)):
-                    tab.widget.set_text(self.project.get_head_code())
+                    if reload_head:
+                        tab.widget.set_text(self.project.get_head_code())
                 else:
                     new_code = tab.key.get_code()
                     tab.widget.set_text(new_code)
+
         window.foreach_tab(reload_tab)
 
-    def find_cursor_uses(self, tu, root_cursor, referenced_cursor, places):
+    def find_cursor_uses(self, tu, root_cursor, cursor, places):
+        referenced_cursor = cursor.referenced
+        if not referenced_cursor:
+            return
         current_file = tu.spelling
-        for c in root_cursor.get_children():
-            if not c.location.file:
-                continue
-            if c.location.file.name == current_file:
-                ref = c.referenced
-                if ref and ref == referenced_cursor and not c.kind.is_unexposed():
-                    kind = c.kind
-                    if kind.value != 103:
-                        places.append(c.location)
-                self.find_cursor_uses(tu, c, referenced_cursor, places)
+        if cursor.semantic_parent and cursor.lexical_parent and cursor.semantic_parent != cursor.lexical_parent:
+            referenced_cursor = cursor.canonical
+
+        name = referenced_cursor.spelling
+
+        def _find_cursors_locations(root_cursor, referenced_cursor, places):
+            for c in root_cursor.get_children():
+                if not c.location.file:
+                    continue
+                if c.location.file.name == current_file:
+                    ref = c.referenced
+                    valid = False
+                    sem_par = c.semantic_parent
+
+                    if (ref and ref == referenced_cursor) or (sem_par and sem_par == referenced_cursor):
+                        valid = True
+                    elif ref and not referenced_cursor.is_definition():
+                        defin = referenced_cursor.get_definition()
+                        if defin and defin == ref:
+                            valid = True
+
+                    if (c.spelling == name or (ref and ref.spelling == name)) and c.kind.from_param() != 103:
+                        if valid:
+                            places.append(c.location)
+
+                    _find_cursors_locations(c, referenced_cursor, places)
+
+        _find_cursors_locations(root_cursor, referenced_cursor, places)
 
     def text_insert_after(self, buffer, iter, text, length):
         if self.code_was_pasted:
@@ -1078,7 +1134,6 @@ class Completion(gobject.GObject):
     def format_results(self, results):
         proposals = []
         result_type_chunk = None
-        priority = 0
         icon_name = ""
         info = ""
         typed_text = ""
@@ -1131,7 +1186,7 @@ class Completion(gobject.GObject):
 
             if result_kind == 72 and not place_holder:
                 icon_name = "keyword"
-                priority = -35
+                #priority = -35
 
             if result_type_chunk:
                 label_text = ''.join((label_text, "  -->  ", result_type_chunk.spelling))
