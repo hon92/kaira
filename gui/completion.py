@@ -780,7 +780,9 @@ class Completion(gobject.GObject):
 
                     if (c.spelling == name or (ref and ref.spelling == name)) and c.kind.from_param() != 103:
                         if valid:
-                            places.append(c.location)
+                            loc = c.location
+                            if loc not in places:
+                                places.append(c.location)
 
                     _find_cursors_locations(c, referenced_cursor, places)
 
@@ -840,6 +842,17 @@ class Completion(gobject.GObject):
             iter = self.view.get_iter_at_location(buffer_x, buffer_y)
             if not self.active_place_holder.contain(iter):
                 self.active_place_holder.dismiss()
+        #DEBUG
+#         if e.button == 3:
+#             cursor = self.get_cursor_under_mouse()
+#             where = []
+#             self.find_cursor_uses(self.tu, self.tu.cursor, cursor, where)
+#             
+#             for w in where:
+#                 l = w.line - self.clang.line_offset
+#                 c = w.column
+#                 print "line:",l, "col:", c
+#             print "--------------"
 
 #     def dump_cursor(self, cursor):
 #         sem_par = cursor.semantic_parent
