@@ -201,6 +201,84 @@ class Checker:
         tester.args += self.project.get_build_option("CFLAGS").split()
         tester.run()
 
+        generator = self.project.get_generator()
+        if generator:
+            import ptp
+            import clang.cindex as clang
+
+            net_data = []
+            head_line_count = 0
+            head_code = self.project.get_head_code()
+            invisible_code = "#include \"" + os.path.join(base.paths.KAIRA_ROOT,base.paths.CAILIE_INCLUDE_DIR, "cailie.h") + "\"\n"
+            net_data.append(invisible_code)
+            net_data.append(head_code)
+            
+            for data in net_data:
+                for line in data:
+                    head_line_count += line.count("\n")
+
+
+            nets = self.project.nets
+            for net in nets:
+                places = net.places
+                transitions = net.transitions
+
+                for place in places:
+                    code = place.code
+                    if not code:
+                        code = ""
+                    place_header = generator.get_place_user_fn_header(place.id, True) + "{\n" + code + "}\n"
+                    net_data.append(place_header)
+
+                for transition in transitions:
+                    code = transition.code
+                    if not code:
+                        code = ""
+                    transition_header = generator.get_transition_user_fn_header(transition.id, True) + "{\n" + code + "}\n"
+                    net_data.append(transition_header)
+
+            #args = tester.args
+            data = ''.join(net_data)
+            cont = True
+
+            if not clang.Config.loaded:
+                has_clang = ptp.get_config("Main", "LIBCLANG")
+                if has_clang == "True":
+                    path = ptp.get_config("libclang", "path")
+                    clang.Config.set_library_file(path)
+                else:
+                    cont = False
+
+            if cont:
+
+                index = clang.Index.create()
+                temp_file = "temp.cpp"
+                unsaved_files = [(temp_file, data)]
+                tu = index.parse(temp_file, ["-I/usr/include/clang/3.4/include"], unsaved_files)
+                if tu:
+                    diagnostics = tu.diagnostics
+                    for d in diagnostics:
+                        if d.severity > 2:
+                            loc = d.location
+                            cursor = clang.Cursor.from_location(tu, loc)
+                            if cursor:
+                                sem_par = cursor.semantic_parent
+                                line = sem_par.location.line
+                                
+                                fce_name = sem_par.spelling
+                                if fce_name and fce_name.startswith("place_fn"):
+                                    f = []
+                                    for c in fce_name:
+                                        if c.isdigit():
+                                            f.append(c)
+                                    id = ''.join(f)
+                                    f = "*{0}/type".format(id)
+                                    error_line = d.location.line - head_line_count 
+                                    if error_line > 1:
+                                        raise utils.PtpException(d.spelling, "*" + id + "/init_function:{0}:{1}".format(str(error_line), str(d.location.column)))
+                                    else:
+                                        raise utils.PtpException(d.spelling, f)
+
         if tester.stderr:
             raise utils.PtpException(tester.stderr)
 
