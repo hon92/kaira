@@ -253,7 +253,7 @@ class NetItem(object):
             if item is None:
                 # Key was not found, take first item
                 # For transition/place it is expected that "box" is returned
-                item = self.get_canvas_items()[0]
+                item = self.get_canvas_items(None)[0]
             position = utils.vector_add(item.get_position(), item.size)
             position = utils.vector_add(position, (0, 0))
             placement = item.get_relative_placement(position)
