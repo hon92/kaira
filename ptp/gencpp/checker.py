@@ -179,11 +179,11 @@ class Checker:
         return builder
 
     def run(self):
-        builder = build.Builder(self.project,
-            os.path.join("/tmp", self.project.get_name() + ".h"))
-
-        build.write_header_file(builder)
-        builder.write_to_file()
+#         builder = build.Builder(self.project,
+#             os.path.join("/tmp", self.project.get_name() + ".h"))
+# 
+#         build.write_header_file(builder)
+#         builder.write_to_file()
 
         tester = base.tester.Tester()
         tester.prepare_writer = self.prepare_writer
@@ -199,10 +199,12 @@ class Checker:
             tester.args += [ "-I", os.path.join(paths.KAIRA_ROOT, paths.CASIMRUN_INCLUDE_DIR) ]
 
         tester.args += self.project.get_build_option("CFLAGS").split()
-        tester.run()
+        #tester.run()
 
         generator = self.project.get_generator()
+        print generator
         if generator:
+            print "START LIBCLANG CHECK ERROR"
             import ptp
             import clang.cindex as clang
 
@@ -255,39 +257,48 @@ class Checker:
                 temp_file = "temp.cpp"
                 unsaved_files = [(temp_file, data)]
                 tu = index.parse(temp_file, ["-I/usr/include/clang/3.4/include"], unsaved_files)
+                
                 if tu:
                     diagnostics = tu.diagnostics
                     for d in diagnostics:
                         if d.severity > 2:
+                            print d
                             loc = d.location
                             cursor = clang.Cursor.from_location(tu, loc)
                             if cursor:
                                 sem_par = cursor.semantic_parent
-                                line = sem_par.location.line
-                                
-                                fce_name = sem_par.spelling
-                                if fce_name and fce_name.startswith("place_fn"):
-                                    f = []
-                                    for c in fce_name:
-                                        if c.isdigit():
-                                            f.append(c)
-                                    id = ''.join(f)
-                                    f = "*{0}/type".format(id)
-                                    error_line = d.location.line - head_line_count 
-                                    if error_line > 1:
-                                        raise utils.PtpException(d.spelling, "*" + id + "/init_function:{0}:{1}".format(str(error_line), str(d.location.column)))
-                                    else:
-                                        raise utils.PtpException(d.spelling, f)
+                                if sem_par:
+                                    line = sem_par.location.line
+                                    
+                                    fce_name = sem_par.spelling
+                                    if fce_name and fce_name.startswith("place_fn"):
+                                        f = []
+                                        for c in fce_name:
+                                            if c.isdigit():
+                                                f.append(c)
+                                        id = ''.join(f)
+                                        f = "*{0}/type".format(id)
+                                        error_line = d.location.line - head_line_count 
+                                        if error_line > 1:
+                                            raise utils.PtpException(d.spelling, "*" + id + "/init_function:{0}:{1}".format(str(error_line), str(d.location.column)))
+                                        else:
+                                            raise utils.PtpException(d.spelling, f)
+                                else:
+                                    error_line = loc.line - 1
+                                    if error_line <= head_line_count:
+                                        print "error on line ", error_line
+                                        raise utils.PtpException(d.spelling, "*head:{0}:{1}".format(error_line, loc.column))
+                                        
 
-        if tester.stderr:
-            raise utils.PtpException(tester.stderr)
-
-        for t in self.types.values():
-            t.add_checks(tester)
-
-        for check in self.checks:
-            tester.add(check)
-
-        check = tester.run()
-        if check is not None:
-            check.throw_exception()
+#         if tester.stderr:
+#             raise utils.PtpException(tester.stderr)
+# 
+#         for t in self.types.values():
+#             t.add_checks(tester)
+# 
+#         for check in self.checks:
+#             tester.add(check)
+# 
+#         check = tester.run()
+#         if check is not None:
+#             check.throw_exception()
