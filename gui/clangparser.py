@@ -44,7 +44,7 @@ class ClangParser():
         self.view = completion.view
         self.completion = completion
         self.index = clang.Index.create()
-        self.args = ["-I" + self.completion.project.get_directory()]
+        self.args = ["-I/usr/include/clang/3.4/include"] # Need to correct this with new version of Clang
         self.tu = None
         self.options = (clang.TranslationUnit.PARSE_PRECOMPILED_PREAMBLE |
                        clang.TranslationUnit.PARSE_INCLUDE_BRIEF_COMMENTS_IN_CODE_COMPLETION |
