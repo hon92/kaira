@@ -62,7 +62,7 @@ class CppGenerator:
                     w.line("\t{0} &{1};", t, name)
             w.line("}};")
             w.emptyline()
-            args = [ "ca::Context &ctx, Vars &var" ]
+            args = [ "ca::Context &ctx, Vars{0} &var".format(str(transition_id)) ]
             if transition.clock:
                 args.append("ca::Clock &clock")
             w.line("void transition_fn{0}({1})".format(transition.id,", ".join(args)))
