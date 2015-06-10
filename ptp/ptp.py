@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 import sys
+import base.paths
+sys.path.append(base.paths.CLANG_LIB)
 import traceback
 import argparse
 import ConfigParser
 
-import base.paths
 
 config = ConfigParser.RawConfigParser()
 if not config.read(base.paths.KAIRA_CONFIG_INI):
