@@ -39,3 +39,6 @@ CASIMRUN_INCLUDE_DIR = "libs/casimrun"
 CASIMRUN_LIB_DIR = "build/libs/casimrun"
 
 CAOCTAVE_INCLUDE_DIR = "libs/caoctave"
+
+CLANG_LIB_DIR = "gui"
+CLANG_LIB = os.path.join(KAIRA_ROOT,CLANG_LIB_DIR)
