@@ -20,6 +20,7 @@
 import subprocess
 import re
 import os
+import clang.cindex as clang
 
 check_id_counter = 30000
 
@@ -110,6 +111,84 @@ class Tester:
         self.stdout, self.stderr = p.communicate()
         for line in self.stderr.split("\n"):
             check = self.process_message(line)
+            print line
             if check is not None:
                 return check
         return None
+
+
+class ClangTester:
+
+
+    filename = "/tmp/kaira-{0}.cpp".format(os.getuid())
+
+    def __init__(self):
+        self.args = ["-I/usr/include/clang/3.4/include"]
+        self.checks = []
+        self.hidden_namespace_decl = ""
+
+    def add_arg(self, list):
+        self.args.extend(list)
+
+    def add(self, check):
+        self.checks.append(check)
+
+    def add_hidden_namespace_decl(self, hidden_namespace):
+        self.hidden_namespace_decl = hidden_namespace.get_code()
+
+    def clang_available(self):
+        import ptp
+        available = True
+        if not clang.Config.loaded:
+                has_clang = ptp.get_config("Main", "LIBCLANG")
+                if has_clang == "True":
+                    path = ptp.get_config("libclang", "path")
+                    clang.Config.set_library_file(path)
+                else:
+                    available = False
+        return available
+
+    def _parse(self):
+        assert self.clang_available() is not None
+        index = clang.Index.create()
+        file = open(ClangTester.filename, 'r')
+        unsaved_files = [(ClangTester.filename, file)]
+        tu = index.parse(ClangTester.filename, self.args, unsaved_files)
+        return tu
+
+    def process_diagnostics(self, diagnostic):
+        for diagnostic in diagnostic:
+            if diagnostic.severity > 2:
+                check_error = self.process_error(diagnostic)
+                if check_error:
+                    return check_error
+
+    def process_error(self, diagnostic):
+        print diagnostic.location, diagnostic.spelling
+        location = diagnostic.location
+        line = location.line
+        for c in self.checks:
+            if c.start_line <= line and c.end_line >= line:
+                #print "ON LINE {0} ERROR:{1}".format(line, diagnostic.spelling),c, c.start_line
+                c.line = line - c.start_line
+                c.column = location.column
+                c.message = diagnostic.spelling
+                return c
+
+    def run(self):
+        assert self.prepare_writer is not None
+        self.writer = self.prepare_writer(self.filename)
+        self.writer.raw_text("#include <cailie.h>")
+        head_check = self.checks[0]
+        head_check.write(self.writer)
+        self.writer.raw_text(self.hidden_namespace_decl)
+
+        for i in range(1, len(self.checks)):
+            self.checks[i].write(self.writer)
+
+        self.writer.write_to_file(self.filename)
+        tu = self._parse()
+        if tu:
+            check_error = self.process_diagnostics(tu.diagnostics)
+            if check_error:
+                return check_error
