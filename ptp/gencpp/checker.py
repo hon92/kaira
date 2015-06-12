@@ -125,6 +125,76 @@ class TypeChecker:
             tester.add(check)
 
 
+class PlaceChecker(base.tester.Check):
+
+    def __init__(self, place, header):
+        self.place = place
+        self.header = header
+        self.source = "*{0}/init_function:{1}:{2}"
+        self.type_source = "*{0}/type"
+
+    def write_prologue(self, writer):
+        writer.raw_text(self.header)
+        writer.raw_text("{\n")
+
+    def write_epilogue(self, writer):
+        writer.raw_text("}\n")
+
+    def write_content(self, writer):
+        code = self.place.code
+        if not code:
+            code = ""
+        writer.raw_text(code)
+
+    def throw_exception(self):
+        if self.line == 0:
+            raise utils.PtpException(self.message, self.type_source.format(self.place.id))
+        raise utils.PtpException(self.message, self.source.format(self.place.id, self.line + 1, self.column))
+
+class TransitionChecker(base.tester.Check):
+
+    def __init__(self, transition, header):
+        self.transition = transition
+        self.source = "*{0}/function:{1}:{2}"
+        self.header = header
+
+    def write_prologue(self, writer):
+        writer.raw_text(self.header)
+        writer.raw_text("{\n")
+
+    def write_epilogue(self, writer):
+        writer.raw_text("}\n")
+
+    def write_content(self, writer):
+        code = self.transition.code
+        if not code:
+            code = ""
+        writer.raw_text(code)
+
+    def throw_exception(self):
+        line = self.line - (len(self.transition.get_decls().get_list()) + 1)
+        raise utils.PtpException(self.message, self.source.format(self.transition.id, line, self.column))
+
+class HeadChecker(base.tester.Check):
+
+    def __init__(self, head_code, params = "struct param\n{\n};\n"):
+        self.source = "*head:{0}:{1}"
+        self.head_code = head_code
+        self.params = params
+        self.line_offset = self.params.count("\n") - 1
+
+    def write_prologue(self, writer):
+        writer.raw_text(self.params)
+
+    def write_epilogue(self, writer):
+        pass
+
+    def write_content(self, writer):
+        writer.raw_text(self.head_code)
+
+    def throw_exception(self):
+        raise utils.PtpException(self.message, self.source.format(self.line - self.line_offset, self.column))
+
 class Checker:
 
     def __init__(self, project):
@@ -142,7 +212,7 @@ class Checker:
     def check_expression(self, expr, decls, return_type, source, message=None):
         self._check_expression(expr, decls, source, message)
 
-        check = CheckStatement("return ({0});".format(expr), decls, return_type, source=source)
+        check = CheckStatement("return (static_cast<{0} >({1}));".format(return_type, expr), decls, return_type, source=source)
         if message:
             check.own_message = message
         else:
@@ -178,166 +248,96 @@ class Checker:
 
         return builder
 
-    def run(self):
-#         builder = build.Builder(self.project,
-#             os.path.join("/tmp", self.project.get_name() + ".h"))
-# 
-#         build.write_header_file(builder)
-#         builder.write_to_file()
+    def check_nodes_in_nets(self):
+        generator = self.project.get_generator()
+        class HiddenNamespace():
+            def __init__(self, name):
+                self.name = name
+                self.forward_decls = []
+                self.checks = []
 
-        tester = base.tester.Tester()
-        tester.prepare_writer = self.prepare_writer
-        tester.args = [ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAILIE_INCLUDE_DIR),
-                        "-I", self.project.root_directory ]
+            def add_place(self, place):
+                id = place.id
+                code = place.code
+                if not code:
+                    code = ""
+                place_header = generator.get_place_user_fn_header(place.id, True)
+                self.forward_decls.append(place_header[:-1] + ";\n")
+                place_header = self.insert_string_at_index(place_header, self.name + "::", 5)
+                self.checks.append(PlaceChecker(place, place_header))
+
+            def add_transition(self, transition):
+                transition_header = generator.get_transition_user_fn_header(transition.id, True)
+                vars_struct_decl_name = "struct Vars{0};\n".format(transition.id)
+                self.forward_decls.append(vars_struct_decl_name)
+                transition_func_decl = "void transition_fn{0}(ca::Context &ctx, Vars{0} &var);\n".format(transition.id)
+                self.forward_decls.append(transition_func_decl)
+                vars_index_pos = transition_header.index("Vars{0}".format(transition.id))
+                vars2_index_pos = transition_header.index("Vars{0}".format(transition.id), vars_index_pos + 1)
+                func_index_pos = transition_header.index("transition_fn{0}".format(transition.id))
+                hnn = self.name + "::"
+                transition_header = self.insert_string_at_index(transition_header, hnn, vars2_index_pos)
+                transition_header = self.insert_string_at_index(transition_header, hnn, func_index_pos)
+                transition_header = self.insert_string_at_index(transition_header, hnn, vars_index_pos)
+                self.checks.append(TransitionChecker(transition, transition_header))
+
+            def get_code(self):
+                return "namespace {0}\n{{\n".format(self.name) + ''.join(self.forward_decls) + "\n}\n"
+
+            def __getitem__(self, i):
+                return self.checks[i]
+
+            def __len__(self):
+                return len(self.checks)
+
+            def insert_string_at_index(self, string, substring, index):
+                return string[:index] + substring + string[index:]
+
+        hidden_namespace = HiddenNamespace("__test__")
+
+        for net in self.project.nets:
+            for place in net.places:
+                hidden_namespace.add_place(place)
+
+            for transition in net.transitions:
+                hidden_namespace.add_transition(transition)
+
+        return hidden_namespace
+
+    def run(self):
+        builder = build.Builder(self.project,
+            os.path.join("/tmp", self.project.get_name() + ".h"))
+        builder.write_to_file()
+
+        clang_tester = base.tester.ClangTester()
+        clang_tester.prepare_writer = self.prepare_writer
+        clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAILIE_INCLUDE_DIR),
+                         "-I", self.project.root_directory ])
 
         if self.project.get_build_with_octave():
             import ptp # To avoid cyclic import
-            tester.args += [ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAOCTAVE_INCLUDE_DIR) ]
-            tester.args += ptp.get_config("Octave", "INCFLAGS").split()
+            clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAOCTAVE_INCLUDE_DIR) ])
+            clang_tester.add_arg(ptp.get_config("Octave", "INCFLAGS").split())
 
         if self.project.build_target == "simrun":
-            tester.args += [ "-I", os.path.join(paths.KAIRA_ROOT, paths.CASIMRUN_INCLUDE_DIR) ]
+            clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CASIMRUN_INCLUDE_DIR) ])
 
-        tester.args += self.project.get_build_option("CFLAGS").split()
-        #tester.run()
-
+        clang_tester.add_arg(self.project.get_build_option("CFLAGS").split())
         generator = self.project.get_generator()
+        clang_tester.add(HeadChecker(self.project.get_head_code(), generator.get_param_struct()))
 
-        if generator:
-            print "START LIBCLANG CHECK ERROR"
-            import ptp
-            import clang.cindex as clang
+        hidden_namespace = self.check_nodes_in_nets()
+        clang_tester.add_hidden_namespace_decl(hidden_namespace)
 
-            net_data = []
-            head_line_count = 0
-            head_code = self.project.get_head_code()
-            invisible_code = "#include \"" + os.path.join(base.paths.KAIRA_ROOT,base.paths.CAILIE_INCLUDE_DIR, "cailie.h") + "\"\n"
-            net_data.append(invisible_code)
-            net_data.append(head_code)
-            
-            hidden_namespace_name = "_test_"
-            hidden_namespace_declarations = []
-            
+        for check in hidden_namespace:
+            clang_tester.add(check)
 
-            def insert_string_at_index(string, inserted_string, index):
-                return string[:index] + inserted_string + string[index:]
+        for t in self.types.values():
+            t.add_checks(clang_tester)
 
-            nodes_data = []
-            nets = self.project.nets
-            for net in nets:
-                places = net.places
-                transitions = net.transitions
+        for check in self.checks:
+            clang_tester.add(check)
 
-                for place in places:
-                    code = place.code
-                    if not code:
-                        code = ""
-                    place_header = generator.get_place_user_fn_header(place.id, True)
-                    hidden_namespace_declarations.append(place_header[:-1] + ";\n")
-                    place_header = insert_string_at_index(place_header, hidden_namespace_name + "::", 5)
-                    nodes_data.append(place_header + "{\n" + code + "}\n")
-
-                for transition in transitions:
-                    code = transition.code
-                    if not code:
-                        code = ""
-                    transition_header = generator.get_transition_user_fn_header(transition.id, True)
-                    vars_decl_name = "struct Vars{0}".format(transition.id)
-                    hidden_namespace_declarations.append(vars_decl_name + ";\n")
-                    hidden_namespace_declarations.append("void transition_fn{0}(ca::Context &ctx, Vars{1} &var)".format(transition.id, transition.id) + ";\n")
-                    vars_index_pos = transition_header.index("Vars{0}".format(transition.id))
-                    vars2_index_pos = transition_header.index("Vars{0}".format(transition.id), vars_index_pos + 1)
-                    func_index_pos = transition_header.index("transition_fn{0}".format(transition.id))
-                    transition_header = insert_string_at_index(transition_header, hidden_namespace_name + "::", vars2_index_pos)
-                    transition_header = insert_string_at_index(transition_header, hidden_namespace_name + "::", func_index_pos)
-                    transition_header = insert_string_at_index(transition_header, hidden_namespace_name + "::", vars_index_pos)
-                    nodes_data.append(transition_header + "{\n" + code + "}\n")
-
-            #args = tester.args
-            hidden_namespace = "namespace {0}".format(hidden_namespace_name) + "\n{\n" + ''.join(hidden_namespace_declarations) + "\n}\n";
-            net_data.append(hidden_namespace)
-            
-            
-            for data in net_data:
-                for line in data:
-                    head_line_count += line.count("\n")
-            net_data.extend(nodes_data)
-            
-            data = ''.join(net_data)
-            cont = True
-            #print data
-            if not clang.Config.loaded:
-                has_clang = ptp.get_config("Main", "LIBCLANG")
-                if has_clang == "True":
-                    path = ptp.get_config("libclang", "path")
-                    clang.Config.set_library_file(path)
-                else:
-                    cont = False
-
-            if cont:
-                index = clang.Index.create()
-                temp_file = "temp.cpp"
-                unsaved_files = [(temp_file, data)]
-                tu = index.parse(temp_file, ["-I/usr/include/clang/3.4/include"], unsaved_files)
-                
-                if tu:
-                    diagnostics = tu.diagnostics
-                    for d in diagnostics:
-                        if d.severity > 2:
-                            print d
-                            loc = d.location
-                            cursor = clang.Cursor.from_location(tu, loc)
-                            if cursor:
-                                sem_par = cursor.semantic_parent
-                                if sem_par and sem_par.semantic_parent and sem_par.semantic_parent.spelling == hidden_namespace_name: # add check if node is in hidden namespace
-                                    #print "SEM_PAR:", sem_par.kind, sem_par.spelling
-                                    line = sem_par.location.line
-
-                                    fce_name = sem_par.spelling
-                                    if fce_name and fce_name.startswith("place_fn"):
-                                        f = []
-                                        for c in fce_name:
-                                            if c.isdigit():
-                                                f.append(c)
-                                        id = ''.join(f)
-                                        f = "*{0}/type".format(id)
-                                        error_line = d.location.line - head_line_count 
-                                        if error_line > 1:
-                                            raise utils.PtpException(d.spelling, "*" + id + "/init_function:{0}:{1}".format(str(error_line), str(d.location.column)))
-                                        else:
-                                            raise utils.PtpException(d.spelling, f)
-                                    elif fce_name and fce_name.startswith("transition_fn"):
-                                        f = []
-                                        for c in fce_name:
-                                            if c.isdigit():
-                                                f.append(c)
-                                        id = ''.join(f)
-                                        
-                                        error_line = d.location.line - head_line_count - (len(transition.get_decls().get_list()) + 3) * 2
-                                        if error_line > 1:
-                                            message = d.spelling
-                                            hidden_namespace_error = hidden_namespace_name + "::" + "Vars{0}".format(transition.id)
-                                            if hidden_namespace_error in message:
-                                                message = message.replace(hidden_namespace_error, "Vars")
-
-                                            raise utils.PtpException(message, "*" + id + "/function:{0}:{1}".format(str(error_line), str(d.location.column)))
-
-                                else:
-                                    error_line = loc.line - 1
-                                    if error_line <= head_line_count:
-                                        #print "error on line ", error_line
-                                        raise utils.PtpException(d.spelling, "*head:{0}:{1}".format(error_line, loc.column))
-                                        
-
-#         if tester.stderr:
-#             raise utils.PtpException(tester.stderr)
-# 
-#         for t in self.types.values():
-#             t.add_checks(tester)
-# 
-#         for check in self.checks:
-#             tester.add(check)
-# 
-#         check = tester.run()
-#         if check is not None:
-#             check.throw_exception()
+        check = clang_tester.run()
+        if check is not None:
+            check.throw_exception()
