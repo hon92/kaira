@@ -151,9 +151,10 @@ class ClangTester:
     def _parse(self):
         assert self.clang_available() is not None
         index = clang.Index.create()
-        file = open(ClangTester.filename, 'r')
-        unsaved_files = [(ClangTester.filename, file)]
-        tu = index.parse(ClangTester.filename, self.args, unsaved_files)
+        with open(ClangTester.filename, 'r') as file:
+            unsaved_files = [(ClangTester.filename, file)]
+            tu = index.parse(ClangTester.filename, self.args, unsaved_files)
+
         return tu
 
     def process_diagnostics(self, diagnostic):
