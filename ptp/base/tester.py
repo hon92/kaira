@@ -21,6 +21,8 @@ import subprocess
 import re
 import os
 import clang.cindex as clang
+import utils
+from collections import OrderedDict
 
 check_id_counter = 30000
 
@@ -65,6 +67,129 @@ class Check:
     def new_id(self):
         return new_id()
 
+class FunctionCheck():
+
+    #function_type = "method" or "function"
+    def __init__(self, tu, name, function_type, return_type = "void", parameters = {}, const = False, volatile = False, restrict = False):
+        self.tu = tu
+        self.name = name
+        self.return_type = return_type
+        self.parameters = parameters
+        self.function_type = function_type
+        self.const = const
+        self.volatile = volatile
+        self.restrict = restrict
+
+    def _find_functions(self):
+        functions = []
+        for c in self.tu.cursor.get_children():
+            if not c.location.file or c.location.file.name != ClangTester.filename:
+                continue
+            if c.kind == clang.CursorKind.FUNCTION_DECL:
+                functions.append(c)
+        return functions
+
+    def _find_class_or_struct_declarations(self):
+        declarations = []
+        cursor = self.tu.cursor
+        for c in cursor.get_children():
+            if not c.location.file or c.location.file.name != ClangTester.filename: 
+                continue
+
+            if not c.semantic_parent or c.semantic_parent != cursor: # only declarations inside head with semantic_parent root cursor
+                continue
+
+            kind_type = c.kind
+            if kind_type == clang.CursorKind.STRUCT_DECL or kind_type == clang.CursorKind.UNION_DECL or kind_type == clang.CursorKind.CLASS_DECL: # struct, union or class declaration kind
+                if c.spelling == "param": # skip param struct
+                    continue
+                declarations.append(c)
+        return declarations
+
+    def _find_functions_inside_declaration(self, declaration):
+        methods = []
+        for field in declaration.get_children():
+            kind_type = field.kind
+            if kind_type != clang.CursorKind.CXX_METHOD:
+                continue
+            methods.append(field)
+        return methods
+
+    def _get_usr(self, data):
+        x = data[len(data) - 1]
+        if x == "#":
+            return (False, False, False)#const, volatile, restrict
+
+        is_const = int(x) & 0x1
+        is_volatile = int(x) & 0x4
+        is_restrict = int(x) & 0x2
+        return (is_const != 0, is_volatile != 0, is_restrict != 0)
+
+    def _check_specific_function(self, functions):
+        def get_parameters(fn):
+            parameters = []
+            for c in fn.get_children():
+                if c.kind == clang.CursorKind.PARM_DECL:
+                        parameters.append(c)
+            return parameters
+
+        def check_parameters(parameters):
+            for i in range(len(self.parameters)):
+                p = parameters[i]
+                n, t = self.parameters[i]
+                type = p.type.spelling
+                name = p.spelling
+                if not (n == name and t == type):
+                    return False
+            return True
+
+        for fn in functions:
+            if fn.spelling != self.name:
+                    continue
+            is_const, is_volatile, is_restrict = self._get_usr(fn.get_usr())
+            if is_const != self.const or is_volatile != self.volatile or is_restrict != self.restrict:
+                continue
+
+            result_type = fn.result_type.spelling
+            if result_type != self.return_type:
+                continue 
+
+            parameters = get_parameters(fn)
+            if(len(parameters) != len(self.parameters)):
+                continue
+
+            if not check_parameters(parameters):
+                continue
+
+            return True
+        return False
+
+    def check(self, line_offset = 0):
+        if self.function_type == "function":
+            functions = self._find_functions()
+            contain = self._check_specific_function(functions)
+            if not contain:
+                self.throw_function_exception()
+
+        elif self.function_type == "method":
+            user_declarations = self._find_class_or_struct_declarations()
+            for decl in user_declarations:
+                methods = self._find_functions_inside_declaration(decl)
+                contain = self._check_specific_function(methods)
+                if not contain:
+                    self.throw_method_exception(decl, line_offset)
+        else:
+            raise Exception("Invalid function type({0})".format(self.function_type))
+
+    def throw_method_exception(self, decl, line_offset):
+        location = decl.location
+        message = "In user type \"{0}\" is not defined method \"{1}\""
+        print "line " , location.line, line_offset, decl.kind, decl.displayname
+        raise utils.PtpException(message.format(decl.displayname, self.name), "*head:{0}:{1}".format(location.line - line_offset - 6, location.column))
+
+    def throw_function_exception(self):
+        message = "In head file did not exist function \"{0}\""
+        raise utils.PtpException(message.format(self.name), "*head")
 
 class Tester:
 
@@ -180,8 +305,8 @@ class ClangTester:
         assert self.prepare_writer is not None
         self.writer = self.prepare_writer(self.filename)
         self.writer.raw_text("#include <cailie.h>")
-        head_check = self.checks[0]
-        head_check.write(self.writer)
+        self.head_check = self.checks[0]
+        self.head_check.write(self.writer)
         self.writer.raw_text(self.hidden_namespace_decl)
 
         for i in range(1, len(self.checks)):
@@ -190,6 +315,11 @@ class ClangTester:
         self.writer.write_to_file(self.filename)
         tu = self._parse()
         if tu:
+            self.check_functions(tu);
             check_error = self.process_diagnostics(tu.diagnostics)
             if check_error:
                 return check_error
+
+    def check_functions(self, tu):
+        FunctionCheck(tu, "token_name", "method", "std::string", const = True).check(self.head_check.start_line)
+
