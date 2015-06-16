@@ -175,16 +175,33 @@ class TransitionChecker(base.tester.Check):
         line = self.line - (len(self.transition.get_decls().get_list()) + 1)
         raise utils.PtpException(self.message, self.source.format(self.transition.id, line, self.column))
 
-class HeadChecker(base.tester.Check):
+class ParamChecker(base.tester.Check):
 
-    def __init__(self, head_code, params = "struct param\n{\n};\n"):
-        self.source = "*head:{0}:{1}"
-        self.head_code = head_code
-        self.params = params
-        self.line_offset = self.params.count("\n") - 1
+    def __init__(self, param = "struct param\n{\n};\n"):
+        self.source = "param"
+        self.param = param
+        self.message = "Invalid argument in project parameters"
 
     def write_prologue(self, writer):
-        writer.raw_text(self.params)
+        pass
+
+    def write_epilogue(self, writer):
+        pass
+
+    def write_content(self, writer):
+        writer.raw_text(self.param)
+
+    def throw_exception(self):
+        raise utils.PtpException(self.message, self.source)
+
+class HeadChecker(base.tester.Check):
+
+    def __init__(self, head_code):
+        self.source = "*head:{0}:{1}"
+        self.head_code = head_code
+
+    def write_prologue(self, writer):
+        pass
 
     def write_epilogue(self, writer):
         pass
@@ -193,7 +210,7 @@ class HeadChecker(base.tester.Check):
         writer.raw_text(self.head_code)
 
     def throw_exception(self):
-        raise utils.PtpException(self.message, self.source.format(self.line - self.line_offset, self.column))
+        raise utils.PtpException(self.message, self.source.format(self.line + 1, self.column))
 
 class Checker:
 
@@ -324,7 +341,8 @@ class Checker:
 
         clang_tester.add_arg(self.project.get_build_option("CFLAGS").split())
         generator = self.project.get_generator()
-        clang_tester.add(HeadChecker(self.project.get_head_code(), generator.get_param_struct()))
+        clang_tester.add(ParamChecker(generator.get_param_struct()))
+        clang_tester.add(HeadChecker(self.project.get_head_code()))
 
         hidden_namespace = self.check_nodes_in_nets()
         clang_tester.add_hidden_namespace_decl(hidden_namespace)
