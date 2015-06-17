@@ -185,7 +185,7 @@ class FunctionCheck():
         location = decl.location
         message = "In user type \"{0}\" is not defined method \"{1}\""
         print "line " , location.line, line_offset, decl.kind, decl.displayname
-        raise utils.PtpException(message.format(decl.displayname, self.name), "*head:{0}:{1}".format(location.line - line_offset - 6, location.column))
+        raise utils.PtpException(message.format(decl.displayname, self.name), "*head:{0}:{1}".format(location.line - line_offset + 1, location.column))
 
     def throw_function_exception(self):
         message = "In head file did not exist function \"{0}\""
@@ -305,11 +305,13 @@ class ClangTester:
         assert self.prepare_writer is not None
         self.writer = self.prepare_writer(self.filename)
         self.writer.raw_text("#include <cailie.h>")
-        self.head_check = self.checks[0]
+        param_check = self.checks[0]
+        self.head_check = self.checks[1]
+        param_check.write(self.writer)
         self.head_check.write(self.writer)
         self.writer.raw_text(self.hidden_namespace_decl)
 
-        for i in range(1, len(self.checks)):
+        for i in range(2, len(self.checks)):
             self.checks[i].write(self.writer)
 
         self.writer.write_to_file(self.filename)
