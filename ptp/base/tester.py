@@ -22,7 +22,6 @@ import re
 import os
 import clang.cindex as clang
 import utils
-from collections import OrderedDict
 
 check_id_counter = 30000
 
@@ -70,8 +69,7 @@ class Check:
 class FunctionCheck():
 
     #function_type = "method" or "function"
-    def __init__(self, tu, name, function_type, return_type = "void", parameters = {}, const = False, volatile = False, restrict = False):
-        self.tu = tu
+    def __init__(self, name, function_type, return_type = "void", parameters = [], search_in_classes = [], macro = None, const = False, volatile = False, restrict = False):
         self.name = name
         self.return_type = return_type
         self.parameters = parameters
@@ -79,19 +77,23 @@ class FunctionCheck():
         self.const = const
         self.volatile = volatile
         self.restrict = restrict
+        self.search_in_classes = search_in_classes
+        self.macro = macro
+        self.has_macro = False
 
-    def _find_functions(self):
+    def _find_functions(self, tu):
         functions = []
-        for c in self.tu.cursor.get_children():
+        for c in tu.cursor.get_children():
             if not c.location.file or c.location.file.name != ClangTester.filename:
                 continue
             if c.kind == clang.CursorKind.FUNCTION_DECL:
                 functions.append(c)
         return functions
 
-    def _find_class_or_struct_declarations(self):
+    def _find_class_or_struct_declarations(self, tu):
         declarations = []
-        cursor = self.tu.cursor
+        all_declarations = []
+        cursor = tu.cursor
         for c in cursor.get_children():
             if not c.location.file or c.location.file.name != ClangTester.filename: 
                 continue
@@ -103,7 +105,21 @@ class FunctionCheck():
             if kind_type == clang.CursorKind.STRUCT_DECL or kind_type == clang.CursorKind.UNION_DECL or kind_type == clang.CursorKind.CLASS_DECL: # struct, union or class declaration kind
                 if c.spelling == "param": # skip param struct
                     continue
-                declarations.append(c)
+
+                all_declarations.append(c)
+            elif self.macro and kind_type == clang.CursorKind.NAMESPACE and c.spelling == "ca":
+                self.check_macro(c)
+
+        for decl in all_declarations:
+            if decl.spelling in self.search_in_classes:
+                declarations.append(decl)
+                for d in decl.get_children():
+                    if d.kind == clang.CursorKind.CXX_BASE_SPECIFIER:
+                        for base in d.get_children():
+                            base_class_name = base.type.spelling
+                            for class_decl in all_declarations:
+                                if class_decl.spelling == base_class_name:
+                                    declarations.append(class_decl)
         return declarations
 
     def _find_functions_inside_declaration(self, declaration):
@@ -164,27 +180,41 @@ class FunctionCheck():
             return True
         return False
 
-    def check(self, line_offset = 0):
+    def check(self, tu, line_offset = 0):
         if self.function_type == "function":
-            functions = self._find_functions()
+            functions = self._find_functions(tu)
             contain = self._check_specific_function(functions)
             if not contain:
                 self.throw_function_exception()
 
         elif self.function_type == "method":
-            user_declarations = self._find_class_or_struct_declarations()
+            user_declarations = self._find_class_or_struct_declarations(tu)
+            if user_declarations == []:
+                return
+
+            has_method = False
             for decl in user_declarations:
                 methods = self._find_functions_inside_declaration(decl)
                 contain = self._check_specific_function(methods)
-                if not contain:
-                    self.throw_method_exception(decl, line_offset)
+                if contain:
+                    has_method = True
+            if not has_method and not self.has_macro:
+                self.throw_method_exception(user_declarations[0], line_offset)
         else:
             raise Exception("Invalid function type({0})".format(self.function_type))
+
+    def check_macro(self, namespace_cursor):
+        for item_in_namespace in namespace_cursor.get_children():
+            if item_in_namespace.spelling == self.macro:
+                for info in item_in_namespace.get_children():
+                    if info.kind == clang.CursorKind.PARM_DECL:
+                        for info_type in info.get_children():
+                            if info_type.type.spelling in self.search_in_classes:
+                                self.has_macro = True
 
     def throw_method_exception(self, decl, line_offset):
         location = decl.location
         message = "In user type \"{0}\" is not defined method \"{1}\""
-        print "line " , location.line, line_offset, decl.kind, decl.displayname
         raise utils.PtpException(message.format(decl.displayname, self.name), "*head:{0}:{1}".format(location.line - line_offset + 1, location.column))
 
     def throw_function_exception(self):
@@ -236,7 +266,6 @@ class Tester:
         self.stdout, self.stderr = p.communicate()
         for line in self.stderr.split("\n"):
             check = self.process_message(line)
-            print line
             if check is not None:
                 return check
         return None
@@ -251,12 +280,16 @@ class ClangTester:
         self.args = ["-I/usr/include/clang/3.4/include"]
         self.checks = []
         self.hidden_namespace_decl = ""
+        self.functions_checks = []
 
     def add_arg(self, list):
         self.args.extend(list)
 
     def add(self, check):
         self.checks.append(check)
+
+    def add_function_check(self, function_check):
+        self.functions_checks.append(function_check)
 
     def add_hidden_namespace_decl(self, hidden_namespace):
         self.hidden_namespace_decl = hidden_namespace.get_code()
@@ -282,7 +315,7 @@ class ClangTester:
 
         return tu
 
-    def process_diagnostics(self, diagnostic):
+    def process_diagnostics(self, diagnostic):#TOTO: raise unknown error 
         for diagnostic in diagnostic:
             if diagnostic.severity > 2:
                 check_error = self.process_error(diagnostic)
@@ -295,7 +328,6 @@ class ClangTester:
         line = location.line
         for c in self.checks:
             if c.start_line <= line and c.end_line >= line:
-                #print "ON LINE {0} ERROR:{1}".format(line, diagnostic.spelling),c, c.start_line
                 c.line = line - c.start_line
                 c.column = location.column
                 c.message = diagnostic.spelling
@@ -323,5 +355,6 @@ class ClangTester:
                 return check_error
 
     def check_functions(self, tu):
-        FunctionCheck(tu, "token_name", "method", "std::string", const = True).check(self.head_check.start_line)
+        for func in self.functions_checks:
+            func.check(tu, self.head_check.start_line)
 
