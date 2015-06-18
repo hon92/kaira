@@ -76,12 +76,16 @@ class TypeChecker:
 
         message = "Function '{0}' not defined for type '{1}'"
         if "token_name" in self.functions:
-            decls = Declarations()
-            decls.set(var, self.name + " &")
-            check = CheckStatement("ca::token_name({0});".format(var),
-                                   decls, source=source)
-            check.own_message = message.format("token_name", self.name)
-            tester.add(check)
+#             decls = Declarations()
+#             decls.set(var, self.name + " &")
+#             check_method = ""#"std::string ____t = {0}.token_name();".format(var)
+#             check = CheckStatement(check_method + "ca::token_name({0});".format(var),
+#                                    decls, source=source)
+#             check.own_message = message.format("token_name", self.name)
+#             tester.add(check)
+
+            func_check = base.tester.FunctionCheck("token_name", "method", "std::string", search_in_classes = [self.name], macro = "token_name", const = True)
+            tester.add_function_check(func_check)
 
         if "pack" in self.functions:
             decls = Declarations()
