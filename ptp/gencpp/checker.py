@@ -83,9 +83,8 @@ class TypeChecker:
 #                                    decls, source=source)
 #             check.own_message = message.format("token_name", self.name)
 #             tester.add(check)
-
-            func_check = base.tester.FunctionCheck("token_name", "method", "std::string", search_in_classes = [self.name], macro = "token_name", const = True)
-            tester.add_function_check(func_check)
+            func_definiton = base.tester.FunctionDefinition("token_name", self.name, "std::string", macro_name = "token_name", const = True)
+            tester.add_function_check(func_definiton)
 
         if "pack" in self.functions:
             decls = Declarations()
@@ -127,7 +126,6 @@ class TypeChecker:
                                    source=source)
             check.own_message = message.format("caoctave::to_octave_value", self.name)
             tester.add(check)
-
 
 class PlaceChecker(base.tester.Check):
 
@@ -216,6 +214,73 @@ class HeadChecker(base.tester.Check):
     def throw_exception(self):
         raise utils.PtpException(self.message, self.source.format(self.line + 1, self.column))
 
+class HiddenNamespaceChecker(base.tester.Check):
+ 
+    def __init__(self, name, project, tester):
+        self.source = ""
+        self.name = name
+        self.project = project
+        self.tester = tester
+        self.namespace = "namespace {0}\n{{\n{1}\n}}\n"
+        self.forward_declarations = []
+        self.generator = project.get_generator()
+        self.node_checks = []
+        self.load_nodes()
+
+    def get_node_checks(self, tester):
+        for check in self.node_checks:
+            tester.add(check)
+
+    def load_nodes(self):
+        for net in self.project.nets:
+            for place in net.places:
+                self._load_place(place)
+            for transition in net.transitions:
+                self._load_transition(transition)
+
+    def _load_place(self, place):
+        place_header = self.generator.get_place_user_fn_header(place.id, True)
+        self.forward_declarations.append(place_header[:-1] + ";\n")
+        place_header = self.insert_string_at_index(place_header, self.name + "::", 5)
+        self.node_checks.append(PlaceChecker(place, place_header))
+
+    def _load_transition(self, transition):
+        transition_header = self.generator.get_transition_user_fn_header(transition.id, True)
+        vars_struct_decl_name = "struct Vars{0};\n".format(transition.id)
+        self.forward_declarations.append(vars_struct_decl_name)
+        transition_func_decl = "void transition_fn{0}(ca::Context &ctx, Vars{0} &var);\n".format(transition.id)
+        self.forward_declarations.append(transition_func_decl)
+        vars_index_pos = transition_header.index("Vars{0}".format(transition.id))
+        vars2_index_pos = transition_header.index("Vars{0}".format(transition.id), vars_index_pos + 1)
+        func_index_pos = transition_header.index("transition_fn{0}".format(transition.id))
+        hnn = self.name + "::"
+        transition_header = self.insert_string_at_index(transition_header, hnn, vars2_index_pos)
+        transition_header = self.insert_string_at_index(transition_header, hnn, func_index_pos)
+        transition_header = self.insert_string_at_index(transition_header, hnn, vars_index_pos)
+        self.node_checks.append(TransitionChecker(transition, transition_header))
+
+    def insert_string_at_index(self, string, substring, index):
+        return string[:index] + substring + string[index:]
+
+    def write_prologue(self, writer):
+        pass
+ 
+    def write_epilogue(self, writer):
+        pass
+ 
+    def write_content(self, writer):
+        writer.raw_text(self.namespace.format(self.name, ''.join(self.forward_declarations)))
+ 
+    def throw_exception(self):
+        index = self.line - 2
+        node_check = self.node_checks[index]
+
+        if isinstance(node_check, PlaceChecker):
+            source = node_check.type_source.format(node_check.place.id)
+            raise utils.PtpException(self.message, source)
+        else:
+            raise utils.PtpException(self.message, "") 
+
 class Checker:
 
     def __init__(self, project):
@@ -269,61 +334,18 @@ class Checker:
 
         return builder
 
-    def check_nodes_in_nets(self):
+    def check_nodes_code_in_project(self):
+        node_checks = []
         generator = self.project.get_generator()
-        class HiddenNamespace():
-            def __init__(self, name):
-                self.name = name
-                self.forward_decls = []
-                self.checks = []
-
-            def add_place(self, place):
-                id = place.id
-                code = place.code
-                if not code:
-                    code = ""
-                place_header = generator.get_place_user_fn_header(place.id, True)
-                self.forward_decls.append(place_header[:-1] + ";\n")
-                place_header = self.insert_string_at_index(place_header, self.name + "::", 5)
-                self.checks.append(PlaceChecker(place, place_header))
-
-            def add_transition(self, transition):
-                transition_header = generator.get_transition_user_fn_header(transition.id, True)
-                vars_struct_decl_name = "struct Vars{0};\n".format(transition.id)
-                self.forward_decls.append(vars_struct_decl_name)
-                transition_func_decl = "void transition_fn{0}(ca::Context &ctx, Vars{0} &var);\n".format(transition.id)
-                self.forward_decls.append(transition_func_decl)
-                vars_index_pos = transition_header.index("Vars{0}".format(transition.id))
-                vars2_index_pos = transition_header.index("Vars{0}".format(transition.id), vars_index_pos + 1)
-                func_index_pos = transition_header.index("transition_fn{0}".format(transition.id))
-                hnn = self.name + "::"
-                transition_header = self.insert_string_at_index(transition_header, hnn, vars2_index_pos)
-                transition_header = self.insert_string_at_index(transition_header, hnn, func_index_pos)
-                transition_header = self.insert_string_at_index(transition_header, hnn, vars_index_pos)
-                self.checks.append(TransitionChecker(transition, transition_header))
-
-            def get_code(self):
-                return "namespace {0}\n{{\n".format(self.name) + ''.join(self.forward_decls) + "\n}\n"
-
-            def __getitem__(self, i):
-                return self.checks[i]
-
-            def __len__(self):
-                return len(self.checks)
-
-            def insert_string_at_index(self, string, substring, index):
-                return string[:index] + substring + string[index:]
-
-        hidden_namespace = HiddenNamespace("__test__")
-
         for net in self.project.nets:
             for place in net.places:
-                hidden_namespace.add_place(place)
+                place_header = generator.get_place_user_fn_header(place.id, True)
+                node_checks.append(PlaceChecker(place, place_header))
 
             for transition in net.transitions:
-                hidden_namespace.add_transition(transition)
-
-        return hidden_namespace
+                transition_header = generator.get_transition_user_fn_header(transition.id, True)
+                node_checks.append(TransitionChecker(transition, transition_header))
+        return node_checks
 
     def run(self):
         builder = build.Builder(self.project,
@@ -334,25 +356,24 @@ class Checker:
         clang_tester.prepare_writer = self.prepare_writer
         clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAILIE_INCLUDE_DIR),
                          "-I", self.project.root_directory ])
-
+ 
         if self.project.get_build_with_octave():
             import ptp # To avoid cyclic import
             clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAOCTAVE_INCLUDE_DIR) ])
             clang_tester.add_arg(ptp.get_config("Octave", "INCFLAGS").split())
-
+ 
         if self.project.build_target == "simrun":
             clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CASIMRUN_INCLUDE_DIR) ])
-
+ 
         clang_tester.add_arg(self.project.get_build_option("CFLAGS").split())
+
         generator = self.project.get_generator()
         clang_tester.add(ParamChecker(generator.get_param_struct()))
-        clang_tester.add(HeadChecker(self.project.get_head_code()))
-
-        hidden_namespace = self.check_nodes_in_nets()
-        clang_tester.add_hidden_namespace_decl(hidden_namespace)
-
-        for check in hidden_namespace:
-            clang_tester.add(check)
+        head_checker = HeadChecker(self.project.get_head_code())
+        clang_tester.add(head_checker)
+        hidden_namespace = HiddenNamespaceChecker("__test__", self.project, clang_tester)
+        clang_tester.add(hidden_namespace)
+        hidden_namespace.get_node_checks(clang_tester)
 
         for t in self.types.values():
             t.add_checks(clang_tester)
@@ -362,4 +383,7 @@ class Checker:
 
         check = clang_tester.run()
         if check is not None:
-            check.throw_exception()
+            if isinstance(check, base.tester.FunctionCheck):
+                check.throw_exception(head_checker.start_line)
+            else:
+                check.throw_exception()
