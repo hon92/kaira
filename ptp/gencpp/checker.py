@@ -248,7 +248,10 @@ class HiddenNamespaceChecker(base.tester.Check):
         transition_header = self.generator.get_transition_user_fn_header(transition.id, True)
         vars_struct_decl_name = "struct Vars{0};\n".format(transition.id)
         self.forward_declarations.append(vars_struct_decl_name)
-        transition_func_decl = "void transition_fn{0}(ca::Context &ctx, Vars{0} &var);\n".format(transition.id)
+        args = [ "ca::Context &ctx, Vars{0} &var".format(str(transition.id)) ]
+        if transition.clock:
+            args.append("ca::Clock &clock")
+        transition_func_decl = "void transition_fn{0}({1});\n".format(transition.id, ', '.join(args))
         self.forward_declarations.append(transition_func_decl)
         vars_index_pos = transition_header.index("Vars{0}".format(transition.id))
         vars2_index_pos = transition_header.index("Vars{0}".format(transition.id), vars_index_pos + 1)
