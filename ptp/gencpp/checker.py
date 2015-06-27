@@ -214,6 +214,25 @@ class HeadChecker(base.tester.Check):
     def throw_exception(self):
         raise utils.PtpException(self.message, self.source.format(self.line + 1, self.column))
 
+class SimRunChecker(base.tester.Check):
+
+    def __init__(self, code):
+        self.source = "*communication-model:{0}:{1}"
+        self.code = code
+
+    def write_prologue(self, writer):
+        writer.raw_text("ca::IntTime packet_time(" \
+                 "casr::Context &ctx, int source_id, int target_id, size_t size)\n{\n")
+
+    def write_epilogue(self, writer):
+        writer.raw_text("}")
+
+    def write_content(self, writer):
+        writer.raw_text(self.code)
+
+    def throw_exception(self):
+        raise utils.PtpException(self.message, self.source.format(self.line + 1, self.column))
+
 class HiddenNamespaceChecker(base.tester.Check):
  
     def __init__(self, name, project, tester):
@@ -334,7 +353,8 @@ class Checker:
 
         if self.project.get_build_with_octave():
             builder.line("#include <caoctave.h>")
-
+        if self.project.build_target == "simrun":
+            builder.line("#include <simrun.h>")
         return builder
 
     def check_nodes_code_in_project(self):
@@ -359,18 +379,20 @@ class Checker:
         clang_tester.prepare_writer = self.prepare_writer
         clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAILIE_INCLUDE_DIR),
                          "-I", self.project.root_directory ])
- 
+
         if self.project.get_build_with_octave():
             import ptp # To avoid cyclic import
             clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CAOCTAVE_INCLUDE_DIR) ])
             clang_tester.add_arg(ptp.get_config("Octave", "INCFLAGS").split())
- 
+
         if self.project.build_target == "simrun":
             clang_tester.add_arg([ "-I", os.path.join(paths.KAIRA_ROOT, paths.CASIMRUN_INCLUDE_DIR) ])
- 
-        clang_tester.add_arg(self.project.get_build_option("CFLAGS").split())
 
+        clang_tester.add_arg(self.project.get_build_option("CFLAGS").split())
         generator = self.project.get_generator()
+        if self.project.build_target == "simrun":
+            clang_tester.add(SimRunChecker(self.project.communication_model_code))
+
         clang_tester.add(ParamChecker(generator.get_param_struct()))
         head_checker = HeadChecker(self.project.get_head_code())
         clang_tester.add(head_checker)
