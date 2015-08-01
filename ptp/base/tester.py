@@ -165,6 +165,21 @@ class FunctionCheck():
         else:
             return self.type_methods[declaration.spelling]
 
+    def _find_methods(self, declaration):
+        if declaration.spelling not in self.type_methods:
+            methods = []
+
+            for field in declaration.get_children():
+                kind_type = field.kind
+                if kind_type != clang.CursorKind.CXX_METHOD:
+                    continue
+                methods.append(field)
+
+            self.type_methods[declaration.spelling] = methods
+            return methods
+        else:
+            return self.type_methods[declaration.spelling]
+
     def _get_usr(self, data):
         x = data[len(data) - 1]
         if x == "#":
@@ -233,7 +248,7 @@ class FunctionCheck():
 
                 founded = False
                 for t in types_to_search:
-                    methods = self._find_public_methods(t)
+                    methods = self._find_methods(t)
                     contain = self._check_specific_function(methods, func)
                     if contain:
                         founded = True
