@@ -386,7 +386,7 @@ class Completion(gobject.GObject):
         self.completion = self.view.get_completion()
 
         self.completion.set_property("remember-info-visibility", True)
-        self.completion.set_property("auto-complete-delay", 0)
+        self.completion.set_property("auto-complete-delay", 250)
         self.completion.set_property("accelerators", 0)
         self.completion.set_property("select-on-show", True)
 
@@ -430,6 +430,7 @@ class Completion(gobject.GObject):
         self.enabled_refactoring = False
         self.code_was_pasted = False
         self.code_change_completion = False
+        self.new_results_requested = False
 
     def cell_activated(self, gutter, renderer, iter, event):
         pass
@@ -795,23 +796,27 @@ class Completion(gobject.GObject):
         if self.active_place_holder and not self.active_place_holder.is_loaded():
             self.active_place_holder.show()
 
-        if text == "." and not self.window_showed:
+        def show_completion_request(new_results_requested = False):
             self.parse_source_code()
+            if new_results_requested:
+                self.new_results_requested = True
             self.view.emit("show-completion")
-        elif text == ">" and not self.window_showed:
+
+        if text == ".":
+            show_completion_request(self.window_showed)
+        elif text == ">":
             pos = buffer.get_cursor_position()
             iter = buffer.get_iter_at_offset(pos - 2)
             char = iter.get_char()
             if char == "-":
-                self.parse_source_code()
-                self.view.emit("show-completion")
-        elif text == ":" and not self.window_showed:
+                show_completion_request(self.window_showed)
+        elif text == ":":
             pos = buffer.get_cursor_position()
             iter = buffer.get_iter_at_offset(pos - 2)
             char = iter.get_char()
             if char == ":":
-                self.parse_source_code()
-                self.view.emit("show-completion")
+                show_completion_request(self.window_showed)
+
         # The following should be configurable by the user
         #elif text == "(":
         #    buffer.insert_interactive(iter, ")", self.view.get_editable())
@@ -1124,8 +1129,9 @@ class Completion(gobject.GObject):
         #window is hidden and cursor position was changed or code was changed -> get new resutls
         #else we can use old results
         #if not self.window_showed and (self.code_changed or is_new_position):
-        if not self.window_showed and (is_new_position or self.code_change_completion):
+        if (not self.window_showed and (is_new_position or self.code_change_completion)) or self.new_results_requested:
             new_results = get_results_now()
+            self.new_results_requested = False
             if new_results:
                 #cProfile.runctx("self.format_results2(new_results)", globals(), locals(),sort = 1)
                 self.results = self.format_results(new_results)
