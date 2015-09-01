@@ -449,8 +449,8 @@ class App:
         self.window.add_tab(Tab("Settings", widget, "settings"))
        
 
-    def edit_head(self, lineno=None):
-        position = ("", lineno) if lineno is not None else None
+    def edit_head(self, lineno=None, colno=0):
+        position = ("", lineno, colno) if lineno is not None else None
 
         if self.window.switch_to_tab_by_key(
                 "Head",
