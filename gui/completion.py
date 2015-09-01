@@ -241,8 +241,8 @@ class InfoBox(gtk.EventBox):
     def __init__(self, completion):
         gtk.EventBox.__init__(self)
         self.completion = completion
-        self.label = gtk.Label("")
-        self.add(self.label)
+        self.container = self._create_container()
+        self.add(self.container)
         self.completion.view.add_child_in_window(self, gtk.TEXT_WINDOW_TEXT, 0, 0)
         self.completion.view.connect("motion_notify_event", self.mouse_move)
         self.completion.app.window.connect("leave_notify_event", self.hide_box)
@@ -255,14 +255,25 @@ class InfoBox(gtk.EventBox):
         self.mouse_x = 0
         self.mouse_y = 0
         self.modify_bg(gtk.STATE_NORMAL, gtk.gdk.color_parse("black"))
-        self.label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("white"))
+
+    def _create_container(self):
+        container = gtk.HBox()
+        self.icon = gtk.Image()
+        self.type_label = gtk.Label("")
+        self.type_label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("yellow"))
+        self.info_label = gtk.Label("")
+        self.info_label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("white"))
+        self.separator_label = gtk.Label(" -> ")
+        self.separator_label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("red"))
+        container.add(self.icon)
+        container.add(self.type_label)
+        container.add(self.separator_label)
+        container.add(self.info_label)
+        return container
 
     def hide_box(self, w, e):
         self.show_box = False
         self.hide_all()
-
-    def change_text(self, text):
-        self.label.set_text(text)
 
     def set_show_delay(self, delay):
         self.delay = int(delay)
@@ -270,7 +281,7 @@ class InfoBox(gtk.EventBox):
     def _set_window_pos(self, x, y):
         window_x = int(x)
         window_y = int(y)
-        box_w, box_h = self.label.size_request()
+        box_w, box_h = self.container.size_request()
         window_x -= box_w / 2
         window_y -= box_h + 15
 
@@ -279,6 +290,17 @@ class InfoBox(gtk.EventBox):
         if window_y < 0:
             window_y += box_h + 25
         self.completion.view.move_child(self, window_x, window_y)
+
+    def show_box_on_screen(self):
+        self.icon.show()        
+        if self.type_label.get_text():
+            self.type_label.show()
+            self.separator_label.show()
+        if self.info_label.get_text():
+            self.info_label.show()
+
+        self.container.show()
+        self.show()
 
     def mouse_move(self, view, e):
         bx, by = self.completion.view.window_to_buffer_coords(gtk.TEXT_WINDOW_TEXT, int(e.x), int(e.y))
@@ -297,16 +319,17 @@ class InfoBox(gtk.EventBox):
             else:
                 return False
 
-        def _fill_box(cursor, message = None):
+        def _fill_box(cursor, message = False):
             if not message:
-                message = self._info_from_cursor(cursor)
-            self.change_text(message)
+                self._info_from_cursor(cursor)
+            else:
+                self.icon.clear()
 
         def _prepare_box(message = None):
             if self.show_box:
                 _fill_box(self.last_cursor, message)
                 self._set_window_pos(self.mouse_x, self.mouse_y)
-                self.show_all()
+                self.show_box_on_screen()
             else:
                 self.hide_all()
             self.show_request = False
@@ -336,27 +359,52 @@ class InfoBox(gtk.EventBox):
         if self.completion.code_error_map.has_key(line - 1):
                 error_code_info = self.completion.code_error_map[line - 1]
                 if col >= error_code_info[0] and col <= error_code_info[1]:
-                    message = "Error: " + error_code_info[2]
-                    request_show_box(message)
+                    type = "Code error"
+                    message = error_code_info[2]
+                    self.type_label.set_text(type)
+                    self.info_label.set_text(message)
+                    request_show_box(True)
 
     def _info_from_cursor(self, cursor):
-        if not cursor:
-            return "INVALID CURSOR"
-        type = cursor.type.kind.spelling
-        result_type = cursor.result_type.kind.spelling
-        name = cursor.displayname
-        definition = cursor.kind.name
-        info_text = ""
+        result_kind = cursor.kind.value
+        if self.completion.kind_map.has_key(result_kind):
+            p, icon_name = self.completion.kind_map[result_kind]
+            self.icon.set_from_pixbuf(self.completion.icons[icon_name])
+        else:
+            self.icon.clear()
 
-        if name:
-            info_text += "Name: " + name + "\n"
-        if type and type != "Unexposed" and type != "Invalid":
-            info_text += "Type: " + type + "\n"
-        if result_type and result_type != "Invalid" and result_type != "Unexposed":
-            info_text += "Result Type: " + result_type + "\n"
-        if definition:
-            info_text += "Definition: " + definition
-        return info_text
+        data_display_name = cursor.displayname
+        
+        if not data_display_name:
+            data_display_name = cursor.spelling
+
+        if not data_display_name:
+            data_display_name = ""
+
+        data_type = cursor.type.get_result().spelling
+        if not data_type:
+            data_type = cursor.type.spelling
+
+        self.type_label.set_text(data_type)
+        self.info_label.set_text(data_display_name + " (" + cursor.kind.name + ")")
+
+#         if not cursor:
+#             return "INVALID CURSOR"
+#         type = cursor.type.kind.spelling
+#         result_type = cursor.result_type.kind.spelling
+#         name = cursor.displayname
+#         definition = cursor.kind.name
+#         info_text = ""
+#  
+#         if name:
+#             info_text += "Name: " + name + "\n"
+#         if type and type != "Unexposed" and type != "Invalid":
+#             info_text += "Type: " + type + "\n"
+#         if result_type and result_type != "Invalid" and result_type != "Unexposed":
+#             info_text += "Result Type: " + result_type + "\n"
+#         if definition:
+#             info_text += "Definition: " + definition
+#         print info_text
 
 def load_proposals_icons():
     theme = gtk.IconTheme()
@@ -1099,6 +1147,7 @@ class Completion(gobject.GObject):
 
     def get_proposals(self, context):
         iter = context.get_iter()
+        print iter.get_line(), iter.get_line_offset()
         line = iter.get_line() + 1
         col = iter.get_line_offset() + 1 - len(self.prefix)
         is_same_line = self.last_cursor_position[0] + 1 == line
@@ -1162,6 +1211,7 @@ class Completion(gobject.GObject):
         availability_string = None
 
         for result in results.results:
+            
             result_kind = result.cursorKind
 
             if self.kind_map.has_key(result_kind):
