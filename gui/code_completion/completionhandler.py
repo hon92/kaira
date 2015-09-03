@@ -22,6 +22,7 @@ import completion
 import highlightmanager
 import refactor
 import renamerefactor
+import generaterefactor
 import infobox
 
 class CompletionHandler():
@@ -68,7 +69,9 @@ class HeadCompletionHandler(CompletionHandler):
 
         refactor_container = refactor.Refactor(self.editor)
         rename_manager = renamerefactor.RenameRefactorManager(self.completion)
+        generate_manager = generaterefactor.GenerateRefactorManager(self.completion)
         refactor_container.add_manager(rename_manager)
+        refactor_container.add_manager(generate_manager)
 
         enable_info_box = self.editor.app.settings.getboolean("code_completion", "enable_info_box")
         if enable_info_box:
