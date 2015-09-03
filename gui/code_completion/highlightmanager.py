@@ -19,6 +19,9 @@
 
 import gtk
 import pango
+import completion
+import gtksourceview2 as gtks
+
 
 class HighLightRule():
     def __init__(self, name):
@@ -54,7 +57,8 @@ class WarningHighLighRule(HighLightRule):
 
     def set_properties(self):
         self.tag.set_property("underline-set", True)
-        self.tag.set_property("underline", pango.UNDERLINE_LOW)
+        self.tag.set_property("underline", pango.UNDERLINE_SINGLE)
+        self.tag.set_property("foreground", "yellow")
 
 
 class Error():
@@ -77,6 +81,12 @@ class Error():
     def has_fix_hits(self):
         return len(self.fixes) > 0
 
+    def get_full_info(self):
+        if len(self.fixes) > 0:
+            return self.message + "\nFix hints: " + self.get_fixes_string()
+        else:
+            return self.message
+
 class HighLightManager():
     def __init__(self, buffer, parser):
         self.buffer = buffer
@@ -84,6 +94,31 @@ class HighLightManager():
         self.tag_table = buffer.get_property("tag_table")
         parser.connect("reparsed", self.update)
         self.error_map = {}
+        gutter = parser.editor.view.get_gutter(gtk.TEXT_WINDOW_LEFT)
+        gutter.connect("query-tooltip", self.on_gutter_tooltip_query)
+        view = parser.editor.view
+        view.set_property("show-line-marks", True)
+        view.set_mark_category_icon_from_pixbuf("error", completion.icons["error"])
+        view.set_mark_category_icon_from_pixbuf("warning", completion.icons["warning"])
+        view.set_mark_category_priority("warning", 1)
+        view.set_mark_category_priority("error", 2)
+        view.set_mark_category_background("error", gtk.gdk.Color(257 * 179, 257 * 147, 257 * 144))
+        view.set_mark_category_background("warning", gtk.gdk.Color(257 * 235, 257 * 214, 257 * 163))
+
+        def empty_fn():
+            return True
+
+        view.set_mark_category_tooltip_markup_func("__empty", empty_fn)
+
+    def on_gutter_tooltip_query(self, gutter, renderer, iter, tooltip):
+        line = iter.get_line()
+        if self.error_map.has_key(line):
+            errors = self.error_map[line]
+            showed_message = []
+            for error in errors:
+                showed_message.append(error.get_full_info())
+            tooltip.set_text("\n\n".join(showed_message))
+            return True
 
     def add_rule(self, high_light_rule):
         if high_light_rule not in self.rules:
@@ -94,8 +129,10 @@ class HighLightManager():
         pass
 
     def clear(self):
+        self.error_map.clear()
         for rule in self.rules:
             self.buffer.remove_tag_by_name(rule.get_name(), self.buffer.get_start_iter(), self.buffer.get_end_iter())
+        self.buffer.remove_source_marks(self.buffer.get_start_iter(), self.buffer.get_end_iter())
 
     def process_diagnostic(self, parser, diagnostic):
         location = diagnostic.location
@@ -123,16 +160,16 @@ class HighLightManager():
             start_iter = self.buffer.get_iter_at_line(sl)
             start_iter.set_line_offset(sc)
             if not (el and ec):
-                start_iter.set_line_offset(0)
-                c = start_iter.get_char()
-                while str.isspace(str(c)):
-                    t = start_iter.forward_char()
-                    if t:
-                        c = start_iter.get_char()
-                    else:
-                        break
                 end_iter = start_iter.copy()
-                end_iter.forward_visible_line()
+                if end_iter.get_char().isspace():
+                    end_iter.backward_char()
+                else:
+                    while not end_iter.get_char().isspace():
+                        moved = end_iter.forward_char()
+                        if not moved:
+                            break
+                        
+                    #end_iter.forward_visible_word_end()
             else:
                 end_iter = self.buffer.get_iter_at_line(el)
                 end_iter.set_line_offset(ec)
@@ -184,7 +221,6 @@ class HighLightManager():
     def update(self, parser, tu):
         #print "updated"
         self.clear()
-        self.error_map.clear()
         for diagnostic in tu.diagnostics:
             print diagnostic
             severity = diagnostic.severity
@@ -209,10 +245,13 @@ class HighLightManager():
 
             if severity == 4:
                 self.buffer.apply_tag_by_name("Error", start_iter, end_iter)
+                self.buffer.create_source_mark(None, "error", start_iter)
             elif severity == 3:
                 self.buffer.apply_tag_by_name("Error", start_iter, end_iter)
+                self.buffer.create_source_mark(None, "error", start_iter)
             elif severity == 2:
                 self.buffer.apply_tag_by_name("Warning", start_iter, end_iter)
+                self.buffer.create_source_mark(None, "warning", start_iter)
 
     def get_error(self, line, col):
         if self.error_map.has_key(line):
