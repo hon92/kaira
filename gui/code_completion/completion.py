@@ -85,6 +85,7 @@ class Completion():
         #buffer signals
         self.view.buffer.connect_after("changed", self.on_buffer_changed_after)
         self.view.buffer.connect_after("insert-text", self.on_buffer_insert_text_after)
+        self.view.buffer.connect("notify::cursor-position", self.on_cursor_position_changed)
 
     def on_populate(self, context):
         iter = context.get_iter()
@@ -159,6 +160,11 @@ class Completion():
     def on_buffer_insert_text_after(self, buffer, iter, text, length):
         if self.placeholder.is_active():
             self.placeholder.show()
+
+    def on_cursor_position_changed(self, buffer, position):
+        if self.placeholder.is_visible():
+            if self.placeholder.is_cursor_outside(buffer.get_cursor_position()):
+                self.placeholder.hide()
 
     def goto_declaration(self):
         is_code_parsed = self.parser.is_parsed()
