@@ -75,6 +75,17 @@ class PlaceHolder(gtk.EventBox):
         last = self.history.get_last()
         return last.is_on_end()
 
+    def is_cursor_inside(self, position):
+        last = self.history.get_last()
+        start_iter = self.buffer.get_iter_at_mark(last.mark)
+        end_iter = self.buffer.get_iter_at_mark(last._marks[-1][0])
+        s_offset = start_iter.get_offset()
+        e_offset = end_iter.get_offset()
+        return position >= s_offset and position <= e_offset
+
+    def is_cursor_outside(self, position):
+        return not self.is_cursor_inside(position)
+
 
 class PlaceHolderInfo():
     def __init__(self, placeholder, proposal, mark):
@@ -194,142 +205,3 @@ class PlaceHolderHistory():
 
     def get_index(self):
         return self.index
-
-
-class PlaceHolderObjectOLD():
-    items = []
-    delimiters = ['(', ')', '{', '}', '<', '>', '[', ']', ', ', ' ', '\n','::', ';', '=', '']
-
-    def __init__(self, iter, proposal, completion):
-        self.proposal = proposal
-        self.iter = iter
-        self.completion = completion
-        self.view = completion.view
-        self.first_mark = completion.view.buffer.create_mark(None, iter, True)
-        self.place_holder_marks = []
-        self.current = 0
-        self.loaded = False
-        self.event_box = self._init_box()
-
-    def is_loaded(self):
-        return self.loaded
-
-    def show(self):
-        self.loaded = True
-        self._set_marks()
-        buffer = self.view.buffer
-        iter = buffer.get_iter_at_mark(self.first_mark)
-        rect = self.view.get_iter_location(iter)
-        rect.x, rect.y = self.view.buffer_to_window_coords(gtk.TEXT_WINDOW_TEXT, rect.x, rect.y)
-        self.view.add_child_in_window(self.event_box, gtk.TEXT_WINDOW_TEXT, rect.x, rect.y)
-        self.select_index(self.current)
-        self.event_box.show_all()
-        PlaceHolderObjectOLD.items.append(self)
-
-    def _init_box(self):
-        event_box = gtk.EventBox()
-        event_box.modify_bg(gtk.STATE_NORMAL, gtk.gdk.Color("black"))
-        self.label = gtk.Label("")
-        event_box.add(self.label)
-        return event_box
-
-    def _set_marks(self):
-        buffer = self.view.buffer
-        first = buffer.get_iter_at_mark(self.first_mark)
-        places = self.proposal.get_placeholders()
-        place_holder_count = places[-1]
-        typed_text_len = len(places[0])
-        first.forward_chars(typed_text_len)
-
-        for index in range(1, len(places) - 1):
-            w = places[index]
-            l = len(w)
-            if w in PlaceHolderObjectOLD.delimiters:
-                first.forward_chars(l)
-            else:
-                w = w.replace("&","&amp;").replace(">","&gt;").replace("<","&lt;")
-                place_holder_count -= 1
-                first.backward_char()
-                start_mark = buffer.create_mark(None, first)
-                first.forward_chars(l + 1)
-                end_mark = buffer.create_mark(None, first)
-                self.place_holder_marks.append((start_mark, end_mark, w))
-
-        if place_holder_count < 0:
-            while place_holder_count != 0:
-                del self.place_holder_marks[0]
-                place_holder_count += 1
-
-        last_mark = buffer.create_mark(None, first)
-        self.place_holder_marks.append((last_mark, last_mark, "End"))
-
-    def dismiss(self):
-        buffer = self.completion.view.buffer
-        buffer.delete_mark(self.first_mark)
-
-        for index in range(len(self.place_holder_marks) - 1):
-            sm, em , w = self.place_holder_marks[index]
-            buffer.delete_mark(sm)
-            buffer.delete_mark(em)
-
-        buffer.delete_mark(self.place_holder_marks[-1][0])
-        self.view.remove(self.event_box)
-        self.view.grab_focus()
-
-        if len(PlaceHolderObjectOLD.items) > 0:
-            del PlaceHolderObjectOLD.items[-1]
-        if len(PlaceHolderObjectOLD.items) > 0:
-            place_holder_obj = PlaceHolderObjectOLD.items[-1]
-            place_holder_obj.event_box.show_all()
-            self.completion.active_place_holder = place_holder_obj
-        else:
-            self.completion.active_place_holder = None
-
-    def hide(self):
-        self.event_box.hide_all()
-
-    def select_index(self, index):
-        if index < 0 or index > len(self.place_holder_marks):
-            return
-
-        buffer = self.view.buffer
-        start_mark, end_mark, word = self.place_holder_marks[index]
-        start_iter = buffer.get_iter_at_mark(start_mark)
-        start_iter.forward_char()
-        end_iter = buffer.get_iter_at_mark(end_mark)
-        rect = self.view.get_iter_location(start_iter)
-        info = word
-        if index == len(self.place_holder_marks) - 1:
-            buffer.place_cursor(end_iter)
-            rect = self.view.get_iter_location(end_iter)
-        else:
-            buffer.select_range(start_iter, end_iter)
-
-        rect.x, rect.y = self.view.buffer_to_window_coords(gtk.TEXT_WINDOW_TEXT, rect.x, rect.y)
-
-        if end_iter.get_line() == 0:
-            rect.y += 20
-        else:
-            rect.y -= 20
-
-        text = '<span color="white" size="medium">' + info +  '</span>'
-        self.label.set_markup(text)
-        self.view.move_child(self.event_box, rect.x, rect.y)
-
-    def next(self):
-        if self.current + 1 < len(self.place_holder_marks):
-            self.current += 1
-        else:
-            self.current = 0
-        self.select_index(self.current)
-
-    def is_on_end(self):
-        place_holders_count = self.proposal.placeholders[-1]
-        return place_holders_count == self.current
-
-    def contain(self, iter):
-        offset = iter.get_offset()
-        first_iter_offset = self.view.buffer.get_iter_at_mark(self.first_mark).get_offset()
-        last_mark = self.place_holder_marks[-1][0]
-        last_iter_offset = self.view.buffer.get_iter_at_mark(last_mark).get_offset()
-        return (offset >= first_iter_offset and offset <= last_iter_offset)
