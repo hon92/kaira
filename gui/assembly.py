@@ -59,8 +59,24 @@ class Class():
                 else:
                     return "invalid"
 
+    def get_type(self):
+        kind = self.class_cursor.kind
+        if kind == clang.CursorKind.STRUCT_DECL:
+            return "struct"
+        elif kind == clang.CursorKind.CLASS_DECL:
+            return "class"
+        elif kind == clang.CursorKind.UNION_DECL:
+            return "union"
+        else:
+            return ""
+
     def get_access_specifier(self, type):
-        pass
+        for cursor in self.class_cursor.get_children():
+            if cursor.kind == clang.CursorKind.CXX_ACCESS_SPEC_DECL:
+                specifier = self._get_specifier_string(cursor)
+                if specifier == type:
+                    return cursor
+        return None
 
     def get_methods(self):
         pass
