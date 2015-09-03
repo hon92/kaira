@@ -59,7 +59,7 @@ class SourceParser(gobject.GObject):
         self.static_code = code.Code()
         self.static_code.add_code(kaira_hidden_include_code)
         self.static_code.add_code(self._load_param_struct())
-        interval = 500
+        interval = 1000
         self.timer = timer.Timer(interval, self.reparse)
         editor.buffer.connect_after("changed", self.code_changed)
 
@@ -107,8 +107,8 @@ class SourceParser(gobject.GObject):
         #macros,snippets,brief comments
         if not self.tu:#check if data was reparsed(now it can contain old code and return invalid results)
             self.reparse()
-        if not self.is_parsed():
-            self.reparse()
+#         if not self.is_parsed():
+#             self.reparse()
         unsaved_files = [(self.file, self.get_code())]
         return self.tu.codeComplete(self.file, line + self.get_line_offset() + 1, column + 1, unsaved_files, self.include_macros(),
                                      self.include_snippets(), self.include_brief_comments())
