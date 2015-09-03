@@ -125,7 +125,20 @@ class Completion():
         pass
 
     def on_key_released_after(self, view, key):
-        pass
+        show = False
+        if key.string == '.':
+            show = True
+        elif key.string == ">":
+            iter = self.editor.buffer.get_iter_at_offset(self.editor.buffer.get_cursor_position() - 2)
+            if iter.get_char() == '-':
+                show = True
+        elif key.string == ":":
+            iter = self.editor.buffer.get_iter_at_offset(self.editor.buffer.get_cursor_position() - 2)
+            if iter.get_char() == ':':
+                show = True
+        if show:
+            self.new_results_requested = True
+            self.view.emit("show-completion")
 
     def on_mouse_press(self, view, event):
         pass
