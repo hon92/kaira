@@ -77,7 +77,7 @@ class BuildTest(unittest.TestCase):
         Project("build").quick_test("1: 10\n2: 20\n")
 
     def test_broken_externtype(self):
-        Project("broken_externtype", "broken").fail_ptp("*102/type:", prefix=True)
+        Project("broken_externtype", "broken").fail_ptp("*head:2:8:", prefix=True)
 
     def test_multicast(self):
         Project("multicast").quick_test("1800\n", processes=6)
