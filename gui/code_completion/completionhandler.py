@@ -21,6 +21,7 @@ import sourceparser
 import completion
 import highlightmanager
 import refactor
+import renamerefactor
 import infobox
 
 class CompletionHandler():
@@ -66,7 +67,7 @@ class HeadCompletionHandler(CompletionHandler):
         highlight_manager.add_rule(highlightmanager.WarningHighLighRule().create())
 
         refactor_container = refactor.Refactor(self.editor)
-        rename_manager = refactor.RenameRefactorManager(self.completion)
+        rename_manager = renamerefactor.RenameRefactorManager(self.completion)
         refactor_container.add_manager(rename_manager)
 
         enable_info_box = self.editor.app.settings.getboolean("code_completion", "enable_info_box")
@@ -98,7 +99,7 @@ class TransitionCompletionHandler(CompletionHandler):
         highlight_manager.add_rule(highlightmanager.WarningHighLighRule().create())
 
         refactor_container = refactor.Refactor(self.editor)
-        rename_manager = refactor.RenameRefactorManager(self.completion)
+        rename_manager = renamerefactor.RenameRefactorManager(self.completion)
         refactor_container.add_manager(rename_manager)
 
         enable_info_box = self.editor.app.settings.getboolean("code_completion", "enable_info_box")
@@ -129,7 +130,7 @@ class PlaceCompletionHandler(CompletionHandler):
         highlight_manager.add_rule(highlightmanager.WarningHighLighRule().create())
 
         refactor_container = refactor.Refactor(self.editor)
-        rename_manager = refactor.RenameRefactorManager(self.completion)
+        rename_manager = renamerefactor.RenameRefactorManager(self.completion)
         refactor_container.add_manager(rename_manager)
 
         enable_info_box = self.editor.app.settings.getboolean("code_completion", "enable_info_box")
