@@ -77,6 +77,8 @@ class PlaceHolder(gtk.EventBox):
 
     def is_cursor_inside(self, position):
         last = self.history.get_last()
+        if not last:
+            return False
         start_iter = self.buffer.get_iter_at_mark(last.mark)
         end_iter = self.buffer.get_iter_at_mark(last._marks[-1][0])
         s_offset = start_iter.get_offset()
