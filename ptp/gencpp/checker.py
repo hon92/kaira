@@ -83,8 +83,14 @@ class TypeChecker:
 #                                    decls, source=source)
 #             check.own_message = message.format("token_name", self.name)
 #             tester.add(check)
-            func_definiton = base.tester.FunctionDefinition("token_name", self.name, "std::string", macro_name = "token_name", const = True)
-            tester.add_function_check(func_definiton)
+            #TODO: doplnit native typy
+            native_types = ["int", "bool", "char", "unsigned char", "unsigned int", "long",\
+                             "unsigned long", "long long", "unsigned long long", "double", "float", "std::string"]
+            if self.name not in native_types:
+                macro = base.tester.MacroDefinition("token_name", [self.name])
+                method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
+                func_definiton = base.tester.MethodOrMacroDefinition(method, macro)#"token_name", self.name, macro, "std::string", const = True)
+                tester.add_function_check(func_definiton)
 
         if "pack" in self.functions:
             decls = Declarations()
@@ -309,6 +315,7 @@ class Checker:
         self.project = project
         self.types = {}
         self.checks = []
+        self.functions_checks = []
 
     def check_type(self, typename, source, functions=()):
         t = self.types.get(typename)
@@ -357,18 +364,9 @@ class Checker:
             builder.line("#include <simrun.h>")
         return builder
 
-    def check_nodes_code_in_project(self):
-        node_checks = []
-        generator = self.project.get_generator()
-        for net in self.project.nets:
-            for place in net.places:
-                place_header = generator.get_place_user_fn_header(place.id, True)
-                node_checks.append(PlaceChecker(place, place_header))
-
-            for transition in net.transitions:
-                transition_header = generator.get_transition_user_fn_header(transition.id, True)
-                node_checks.append(TransitionChecker(transition, transition_header))
-        return node_checks
+    def check_trace_fn(self, fn_name, type):
+        trace_fn_def = base.tester.TraceFunctionDefinition(fn_name, type)
+        self.functions_checks.append(trace_fn_def)
 
     def run(self):
         builder = build.Builder(self.project,
@@ -400,6 +398,9 @@ class Checker:
         clang_tester.add(hidden_namespace)
         hidden_namespace.get_node_checks(clang_tester)
 
+        for fn in self.functions_checks:
+            clang_tester.add_function_check(fn)
+ 
         for t in self.types.values():
             t.add_checks(clang_tester)
 
