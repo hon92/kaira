@@ -20,22 +20,6 @@
 import gtk
 
 
-# class RefactorManager():
-#     def __init__(self):
-#         self.dialog = None
-#  
-#     def _create_dialog(self):
-#         pass
-#  
-#     def show_dialog(self):
-#         assert self.dialog == None
-#         self.dialog.show()
-#         pass
-#  
-#     def check_refactor(self):
-#         pass
-
-
 class Refactor():
     def __init__(self, editor):
         self.managers = []
@@ -46,7 +30,8 @@ class Refactor():
         refactoring_menu = gtk.Menu()
         for manager in self.managers:
             item = manager.get_menu_item()
-            refactoring_menu.add(item)
+            if item:
+                refactoring_menu.add(item)
         menu_item.set_submenu(refactoring_menu)
         menu.append(menu_item)
         menu.show_all()
