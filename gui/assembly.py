@@ -31,21 +31,55 @@ class Variable():
 
 class Function():
     def __init__(self, fn_cursor):
-        pass
+        self.fn_cursor = fn_cursor
+        self.volatile = False
+        self.const = False
+        self.restrict = False
+
+        def _get_usr():
+            data = self.fn_cursor.get_usr()
+            x = data[len(data) - 1]
+            if x == "#":
+                return#const, volatile, restrict
+
+            is_const = int(x) & 0x1
+            is_volatile = int(x) & 0x4
+            is_restrict = int(x) & 0x2
+            self.volatile = is_volatile != 0
+            self.const = is_const != 0
+            self.restrict = is_restrict != 0
+
+        _get_usr()
 
     def get_name(self):
-        pass
+        return self.fn_cursor.spelling
 
     def get_return_type(self):
-        pass
+        return self.fn_cursor.type.get_result().spelling
 
     def get_parameters(self):
-        pass
+        parameters = []
+        for cursor in self.fn_cursor.get_children():
+            if cursor.kind == clang.CursorKind.PARM_DECL:
+                parameters.append(Variable(cursor))
+        return parameters
+
+    def is_const(self):
+        return self.const
+
+    def is_volatile(self):
+        return self.volatile
+
+    def is_restrict(self):
+        return self.restrict
 
 
 class Class():
     def __init__(self, class_cursor):
         self.class_cursor = class_cursor
+
+    def get_name(self):
+        return self.class_cursor.spelling
 
     def _get_specifier_string(self, specifier_cursor):
         for token in specifier_cursor.get_tokens():
@@ -79,7 +113,11 @@ class Class():
         return None
 
     def get_methods(self):
-        pass
+        methods = []
+        for cursor in self.class_cursor.get_children():
+            if cursor.kind == clang.CursorKind.CXX_METHOD:
+                methods.append(Function(cursor))
+        return methods
 
     def get_method(self, name):
         pass
@@ -96,6 +134,19 @@ class Class():
             elif cursor.kind == clang.CursorKind.FIELD_DECL and specifier == type:
                 fields.append(Variable(cursor))
         return fields
+
+
+class Namespace():
+    def __init__(self, namespace_cursor):
+        self.namespace_cursor = namespace_cursor
+
+    def get_functions(self):
+        functions = []
+        for cursor in self.namespace_cursor.get_children():
+            if cursor.kind == clang.CursorKind.FUNCTION_DECL:
+                functions.append(Function(cursor))
+        return functions
+
 
 class Assembly():
     def __init__(self, tu):
@@ -125,14 +176,25 @@ class Assembly():
                 classes.append(Class(cursor))
         return classes
 
-    def global_variables(self):
+    def get_global_variables(self):
         pass
 
-    def global_functions(self):
-        pass
+    def get_global_functions(self):
+        global_functions = []
+        for cursor in self.tu.cursor.get_children():
+            if not cursor.location.file:
+                continue
+            if cursor.location.file.name != self.tu.spelling:
+                continue
+            if cursor.kind == clang.CursorKind.FUNCTION_DECL:
+                global_functions.append(Function(cursor))
 
+        return global_functions
 
-
-
-
+    def get_namespace(self, name):
+        namespace = []
+        for cursor in self.tu_cursor.get_children():
+            if cursor.kind == clang.CursorKind.NAMESPACE and cursor.spelling == name:
+                namespace.append(Namespace(cursor))
+        return namespace
 
