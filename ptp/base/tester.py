@@ -22,6 +22,7 @@ import re
 import os
 import clang.cindex as clang
 import utils
+import assembly
 
 check_id_counter = 30000
 
@@ -66,226 +67,202 @@ class Check:
     def new_id(self):
         return new_id()
 
+
 class FunctionDefinition():
-    def __init__(self, name, type_to_search, return_type = "void", parameters = [], macro_name = None, const = False, volatile = False, restrict = False):
+    def __init__(self, name, return_datatype = "void", parameters = [], const = False, volatile = False, restrict = False):
         self.name = name
-        self.return_type = return_type
-        self.parameters = parameters
+        self.return_datatype = return_datatype
+        self.parameters = parameters # list of tuples (datatype, var_name)
         self.const = const
         self.volatile = volatile
         self.restrict = restrict
-        self.type_to_search = type_to_search
-        self.macro_name = macro_name
 
-    def __eq__(self, other):
-        if type(other) != type(self):
+    def _get_fns(self, function_checker):
+        global_functions = function_checker.assembly.get_global_functions()
+        match_fns = []
+        for f in global_functions:
+            if f.get_name() == self.name:
+                match_fns.append(f) 
+        return match_fns
+
+    def _function_checks(self, fns):
+        found_match = False
+
+        for f in fns:
+            if f.get_return_type() != self.return_datatype:
+                continue
+            if f.is_const() != self.const:
+                continue
+            if f.is_volatile() != self.volatile:
+                continue
+            if f.is_restrict() != self.restrict:
+                continue
+            parameters = f.get_parameters()
+            if len(parameters) != len(self.parameters):
+                continue
+
+            valid_parameters = True
+            for i in range(len(self.parameters)):
+                parameter = parameters[i]
+                data_type, var_name = self.parameters[i]
+                if parameter.get_name() != var_name or parameter.get_datatype() != data_type:
+                    valid_parameters = False
+                    break
+
+            if not valid_parameters:
+                continue
+
+            found_match = True
+        return found_match
+
+    def check(self, function_checker):
+        fns = self._get_fns(function_checker)
+        found = self._function_checks(fns)
+        if not found:
+            function_checker.set_throw_exception_data("Function \"{0}\" not found in Head code".format(self.name))
             return False
-        if (self.name == other.name and
-             self.type_to_search == other.type_to_search and
-             self.return_type == other.return_type and 
-             self.parameters == other.parameters and 
-             self.macro_name == other.macro_name and 
-             self.const == other.const and 
-             self.volatile == other.volatile and 
-             self.restrict == other.restrict):
-            return True
+        return True
+
+
+class MethodDefinition(FunctionDefinition):
+    def __init__(self,  name, class_name, return_datatype = "void", parameters = [], const = False, volatile = False, restrict = False):
+        FunctionDefinition.__init__(self, name, return_datatype, parameters, const, volatile, restrict)
+        self.class_name = class_name
+
+    def check(self, function_checker):
+        target_class = function_checker.assembly.get_class(self.class_name)
+        if not target_class:
+            function_checker.set_throw_exception_data("Data type \"{0}\" not exist in Head code".format(self.class_name))
+            return False
+        methods = []
+        for m in target_class.get_methods():
+            if m.get_name() == self.name:
+                methods.append(m) 
+
+        found = self._function_checks(methods)
+        if not found:
+            function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method \"{1}\"".format(self.class_name, self.name), target_class.class_cursor)
+            return False
+        return True
+
+
+class TraceFunctionDefinition(FunctionDefinition):
+    def __init__(self, name, place_type):
+        FunctionDefinition.__init__(self, name, "int", [], False, False, False)
+        self.valid_data_type = ["int", "double", "std::string"]
+        self.place_type = place_type
+
+    def check(self, function_checker):
+        fns = self._get_fns(function_checker)
+        if len(fns) == 0:
+            function_checker.set_throw_exception_data("Trace function \"{0}\" was not found in Head code".format(self.name))
+            return False
+
+        found_match = False
+        for f in fns:
+            return_type = f.get_return_type()
+            if return_type not in self.valid_data_type:
+                continue
+            parameters = f.get_parameters()
+            if len(parameters) != 1:
+                continue
+            datatype = parameters[0].get_datatype()
+            if datatype != self.place_type:
+                continue
+
+            found_match = True
+
+        if not found_match:
+            function_checker.set_throw_exception_data("Trace function \"{0}\" was not found in Head code".format(self.name))
+            return False
         else:
-            return False 
+            return True
+
+
+class MacroDefinition():
+    def __init__(self, name, parameters = []):
+        self.name = name
+        self.parameters = parameters
+
+    def check(self, function_checker):
+        namespaces = function_checker.assembly.get_namespace("ca")
+        if len(namespaces) == 0:
+            return False
+
+        found_match = False
+        functions_to_check = []
+        for namespace in namespaces:
+            functions = namespace.get_functions()
+            for fn in functions:
+                if fn.get_name() == self.name:
+                    functions_to_check.append(fn)
+
+        for fn in functions_to_check:
+            parameters = fn.get_parameters()
+            if len(parameters) < len(self.parameters):
+                continue
+
+            valid_parameters = True
+            for i in range(len(self.parameters)):
+                p = parameters[i]
+                param_name = self.parameters[i]
+                valid = False
+                for pp in p.var_cursor.get_children():
+                    if pp.type.spelling == param_name:
+                        valid = True
+                        break
+                if not valid:
+                    valid_parameters = False
+                    break
+
+            if valid_parameters:
+                found_match = True
+                break
+        return found_match 
+
+
+class MethodOrMacroDefinition():
+    def __init__(self, method_definition, macro_definition):
+        self.macro_definition = macro_definition
+        self.method_definition = method_definition
+
+    def check(self, function_checker):
+        has_method = self.method_definition.check(function_checker)
+        if not has_method:
+            has_macro = self.macro_definition.check(function_checker)
+            if not has_macro:
+                function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method or macro \"{1}\"".format(self.method_definition.class_name, self.macro_definition.name))
+                return False
+        return True
+
 
 class FunctionCheck():
-
     def __init__(self, tu, functions):
-        self.functions = functions
         self.tu = tu
-        self.types = {}
-        self.type_methods = {}
-        self.namespace = None
-
-    def add(self, func_def):
-        self.functions.append(func_def)
-
-    def _find_functions(self):
-        functions = []
-        for c in self.tu.cursor.get_children():
-            if not c.location.file or c.location.file.name != ClangTester.filename:
-                continue
-            if c.kind == clang.CursorKind.FUNCTION_DECL:
-                functions.append(c)
-        return functions
-
-    def _find_declarations(self):
-        cursor = self.tu.cursor
-        for c in cursor.get_children():
-            if not c.location.file or c.location.file.name != ClangTester.filename: 
-                continue
-
-            if not c.semantic_parent or c.semantic_parent != cursor: # only declarations inside head with semantic_parent root cursor
-                continue
-
-            kind_type = c.kind
-            if kind_type == clang.CursorKind.STRUCT_DECL or kind_type == clang.CursorKind.UNION_DECL or kind_type == clang.CursorKind.CLASS_DECL: # struct, union or class declaration kind
-                if c.spelling == "param": # skip param struct
-                    continue
-                self.types[c.spelling] = c
-
-            elif not self.namespace and kind_type == clang.CursorKind.NAMESPACE and c.spelling == "ca":
-                self.namespace = c
-
-    def _get_parent_types(self, decl):
-        parent_classes = []
-        for d in decl.get_children():
-            if d.kind == clang.CursorKind.CXX_BASE_SPECIFIER:
-                for base in d.get_children():
-                    parent_classes.append(base.type.spelling)
-        return parent_classes
-
-    def _find_public_methods(self, declaration):
-        if declaration.spelling not in self.type_methods:
-            methods = []
-            is_public = False
-            for field in declaration.get_children():
-                kind_type = field.kind
-                if kind_type == clang.CursorKind.CXX_ACCESS_SPEC_DECL:
-                    c = field
-                    for token in c.get_tokens():
-                        if token.kind == clang.TokenKind.KEYWORD and token.cursor == c:
-                            if token.spelling == "public":
-                                is_public = True
-                                break
-                            else:
-                                is_public = False
-
-                if not is_public:
-                    continue
-                if kind_type != clang.CursorKind.CXX_METHOD:
-                    continue
-                methods.append(field)
-            self.type_methods[declaration.spelling] = methods
-            return methods
-        else:
-            return self.type_methods[declaration.spelling]
-
-    def _find_methods(self, declaration):
-        if declaration.spelling not in self.type_methods:
-            methods = []
-
-            for field in declaration.get_children():
-                kind_type = field.kind
-                if kind_type != clang.CursorKind.CXX_METHOD:
-                    continue
-                methods.append(field)
-
-            self.type_methods[declaration.spelling] = methods
-            return methods
-        else:
-            return self.type_methods[declaration.spelling]
-
-    def _get_usr(self, data):
-        x = data[len(data) - 1]
-        if x == "#":
-            return (False, False, False)#const, volatile, restrict
-
-        is_const = int(x) & 0x1
-        is_volatile = int(x) & 0x4
-        is_restrict = int(x) & 0x2
-        return (is_const != 0, is_volatile != 0, is_restrict != 0)
-
-    def _check_specific_function(self, functions, func):
-        def get_parameters(fn):
-            parameters = []
-            for c in fn.get_children():
-                if c.kind == clang.CursorKind.PARM_DECL:
-                        parameters.append(c)
-            return parameters
-
-        def check_parameters(parameters):
-            for i in range(len(func.parameters)):
-                p = parameters[i]
-                n, t = func.parameters[i]
-                type = p.type.spelling
-                name = p.spelling
-                if not (n == name and t == type):
-                    return False
-            return True
-
-        for fn in functions:
-            if fn.spelling != func.name:
-                    continue
-            is_const, is_volatile, is_restrict = self._get_usr(fn.get_usr())
-            if is_const != func.const or is_volatile != func.volatile or is_restrict != func.restrict:
-                continue
-
-            result_type = fn.result_type.spelling
-            if result_type != func.return_type:
-                continue 
-
-            parameters = get_parameters(fn)
-            if(len(parameters) != len(func.parameters)):
-                continue
-
-            if not check_parameters(parameters):
-                continue
-
-            return True
-        return False
+        self.functions = functions
+        self.assembly = assembly.Assembly(tu)
+        self.line = 0
+        self.column = 0
+        self.message = ""
 
     def check(self):
-#         if self.function_type == "function":
-#             functions = self._find_functions()
-#             contain = self._check_specific_function(functions)
-#             if not contain:
-#                 self.throw_function_exception()
-
-#         elif self.function_type == "method":
-        self._find_declarations()
         for func in self.functions:
-            if func.type_to_search in self.types:
-                type = self.types[func.type_to_search]
-                types_to_search = [type]
-                for parent_type in self._get_parent_types(type):
-                    if parent_type in self.types:
-                        types_to_search.append(self.types[parent_type])
+            found = func.check(self)
+            if not found:
+                return self
 
-                founded = False
-                for t in types_to_search:
-                    methods = self._find_methods(t)
-                    contain = self._check_specific_function(methods, func)
-                    if contain:
-                        founded = True
-                        break
+    def set_throw_exception_data(self, message, class_cursor = None):
+        if class_cursor:
+            location = class_cursor.location
+            self.line = location.line
+            self.column = location.column
+        self.message = message
 
-                if not founded:
-                    if self.namespace and func.macro_name:
-                        has_macro = self.check_macro(func)
-                        if not has_macro:
-                            self.set_method_exception(type, func)
-                            return self
-                    else:
-                        self.set_method_exception(type, func)
-                        return self
-
-    def check_macro(self, func):
-        for item_in_namespace in self.namespace.get_children():
-            if item_in_namespace.kind == clang.CursorKind.FUNCTION_DECL and item_in_namespace.spelling == func.macro_name:
-                for info in item_in_namespace.get_children():
-                    if info.kind == clang.CursorKind.PARM_DECL:
-                        for info_type in info.get_children():
-                            if info_type.type.spelling == func.type_to_search:
-                                return True
-        return False
-
-    def set_method_exception(self, decl, func):
-        location = decl.location
-        self.message = "In user type \"{0}\" is not defined method \"{1}\"".format(decl.displayname, func.name)
-        self.line = location.line
-        self.column = location.column
-
-#     def set_function_exception(self):
-#         message = "In head file did not exist function \"{0}\""
-#         #raise utils.PtpException(message.format(self.name), "*head")
-
-    def throw_exception(self, line_offset = 0):
-        raise utils.PtpException(self.message, "*head:{0}:{1}".format(self.line - line_offset + 1, self.column))
+    def throw_exception(self, head_line_offset):
+        line = self.line - head_line_offset + 1
+        if line < 0:
+            line = 0
+        raise utils.PtpException(self.message, "*head:{0}:{1}".format(line, self.column))
 
 class Tester:
 
@@ -336,7 +313,7 @@ class Tester:
                 return check
         return None
 
-#TODO: opravit line_offset
+
 class ClangTester:
 
 
@@ -371,10 +348,10 @@ class ClangTester:
     def _parse(self):
         assert self.clang_available() is not None
         index = clang.Index.create()
+        tu = None
         with open(ClangTester.filename, 'r') as file:
             unsaved_files = [(ClangTester.filename, file)]
             tu = index.parse(ClangTester.filename, self.args, unsaved_files)
-
         return tu
 
     def process_diagnostics(self, diagnostic):#TOTO: raise unknown error 
