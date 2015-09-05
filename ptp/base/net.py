@@ -531,14 +531,16 @@ class Place(utils.EqByIdMixin):
                                      source)
 
         if self.trace_tokens:
+#             for name, return_type in self.trace_tokens_functions:
+#                 decls = Declarations(source)
+#                 decls.set("a", self.type)
+#                 checker.check_expression("{0}(a)".format(name),
+#                                          decls,
+#                                          return_type,
+#                                          self.get_source("type"),
+#                                          "Invalid trace function '{0}'".format(name))
             for name, return_type in self.trace_tokens_functions:
-                decls = Declarations(source)
-                decls.set("a", self.type)
-                checker.check_expression("{0}(a)".format(name),
-                                         decls,
-                                         return_type,
-                                         self.get_source("type"),
-                                         "Invalid trace function '{0}'".format(name))
+                checker.check_trace_fn(name, self.type)
 
     def get_source(self, location):
         return "*{0}/{1}".format(self.id, location)
