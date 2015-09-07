@@ -223,10 +223,9 @@ class LabelSourceParser(SourceParser):
         self.line_offset = head_code.count("\n") + 1
         code = self.editor.get_text("")
         static_code = self.static_code.get_code()
-        return ''.join([static_code, head_code, "\n", code])
+        return ''.join([static_code, head_code, "\n", code + " *__obj;"])
 
     def get_parsing_options(self):
-        return (clang.TranslationUnit.PARSE_PRECOMPILED_PREAMBLE |
-                       clang.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
+        return (clang.TranslationUnit.PARSE_PRECOMPILED_PREAMBLE)
 
 
