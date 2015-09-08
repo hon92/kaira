@@ -68,6 +68,25 @@ class Check:
         return new_id()
 
 
+# class TokenNameChecker(Check):
+#     def __init__(self, class_name, source):
+#         self.source = source
+#         self.class_name = class_name
+#         self.obj_name = "__obj"
+#  
+#     def write_prologue(self, writer):
+#         writer.raw_text("void __token_name_test_fn(const {0} &{1})\n{{\n".format(self.class_name, self.obj_name))
+#  
+#     def write_epilogue(self, writer):
+#         writer.raw_text("}")
+#  
+#     def write_content(self, writer):
+#         writer.raw_text("\tca::token_name({0});\n".format(self.obj_name))
+#  
+#     def throw_exception(self):
+#         raise utils.PtpException(self.message, self.source)
+
+
 class FunctionDefinition():
     def __init__(self, name, return_datatype = "void", parameters = [], const = False, volatile = False, restrict = False):
         self.name = name
@@ -125,25 +144,41 @@ class FunctionDefinition():
 
 
 class MethodDefinition(FunctionDefinition):
-    def __init__(self,  name, class_name, return_datatype = "void", parameters = [], const = False, volatile = False, restrict = False):
+    def __init__(self,  name, place_type, return_datatype = "void", parameters = [], const = False, volatile = False, restrict = False):
         FunctionDefinition.__init__(self, name, return_datatype, parameters, const, volatile, restrict)
-        self.class_name = class_name
+        self.place_type = place_type
+        self.classes_to_check = []
+
+    def _get_classes_from_place_type(self, available_classes):
+        class_to_search = []
+        for cl in available_classes:
+            if cl.get_name() in self.place_type:
+                class_to_search.append(cl)
+        return class_to_search
 
     def check(self, function_checker):
-        target_class = function_checker.assembly.get_class(self.class_name)
-        if not target_class:
-            function_checker.set_throw_exception_data("Data type \"{0}\" not exist in Head code".format(self.class_name))
-            return False
-        methods = []
-        for m in target_class.get_methods():
-            if m.get_name() == self.name:
-                methods.append(m) 
+        classes = function_checker.assembly.get_classes()
+        self.classes_to_check = self._get_classes_from_place_type(classes)
+        if len(self.classes_to_check) == 0:
+            return True
+        classes_not_found_count = len(self.classes_to_check)
 
-        found = self._function_checks(methods)
-        if not found:
-            function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method \"{1}\"".format(self.class_name, self.name), target_class.class_cursor)
+        for target_class in self.classes_to_check:
+            methods = []
+            for m in target_class.get_methods():
+                if m.get_name() == self.name:
+                    methods.append(m)
+
+            found = self._function_checks(methods)
+            if found:
+                classes_not_found_count -= 1
+
+        if classes_not_found_count > 0:
+            target_class = self.classes_to_check[0]
+            function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method \"{1}\"".format(target_class.get_name(), self.name), target_class.class_cursor)
             return False
-        return True
+        else:
+            return True
 
 
 class TraceFunctionDefinition(FunctionDefinition):
@@ -188,7 +223,6 @@ class MacroDefinition():
         namespaces = function_checker.assembly.get_namespace("ca")
         if len(namespaces) == 0:
             return False
-
         found_match = False
         functions_to_check = []
         for namespace in namespaces:
@@ -199,9 +233,9 @@ class MacroDefinition():
 
         for fn in functions_to_check:
             parameters = fn.get_parameters()
+
             if len(parameters) < len(self.parameters):
                 continue
-
             valid_parameters = True
             for i in range(len(self.parameters)):
                 p = parameters[i]
@@ -214,11 +248,13 @@ class MacroDefinition():
                 if not valid:
                     valid_parameters = False
                     break
+                else:
+                    break
 
             if valid_parameters:
                 found_match = True
                 break
-        return found_match 
+        return found_match
 
 
 class MethodOrMacroDefinition():
@@ -229,10 +265,16 @@ class MethodOrMacroDefinition():
     def check(self, function_checker):
         has_method = self.method_definition.check(function_checker)
         if not has_method:
-            has_macro = self.macro_definition.check(function_checker)
-            if not has_macro:
-                function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method or macro \"{1}\"".format(self.method_definition.class_name, self.macro_definition.name))
-                return False
+            has_macro = False
+            classes_to_macro_check = self.method_definition.classes_to_check
+            print "check macro for types " , str([c.get_name() for c in classes_to_macro_check])
+            for class_name in classes_to_macro_check:
+                self.macro_definition.parameters = [class_name.get_name()]
+                has_macro = self.macro_definition.check(function_checker)
+                print "has macro", class_name.get_name(), has_macro 
+                if not has_macro:
+                    function_checker.set_throw_exception_data("In user type \"{0}\" is not defined method or macro \"{1}\"".format(class_name.get_name(), self.macro_definition.name), class_name.class_cursor)
+                    return False
         return True
 
 
@@ -263,6 +305,7 @@ class FunctionCheck():
         if line < 0:
             line = 0
         raise utils.PtpException(self.message, "*head:{0}:{1}".format(line, self.column))
+
 
 class Tester:
 
@@ -354,15 +397,24 @@ class ClangTester:
             tu = index.parse(ClangTester.filename, self.args, unsaved_files)
         return tu
 
-    def process_diagnostics(self, diagnostic):#TOTO: raise unknown error 
-        for diagnostic in diagnostic:
+    def process_diagnostics(self, diagnostics):
+        for diagnostic in diagnostics:
             if diagnostic.severity > 2:
-                check_error = self.process_error(diagnostic)
-                if check_error:
-                    return check_error
+                print diagnostic.location, diagnostic.spelling, [r for r in diagnostic.ranges]
+                if diagnostic.location.file.name == ClangTester.filename:
+                    check_error = self.process_error(diagnostic)
+                    if check_error:
+                        return check_error
+                else:
+                    #check error in different file
+                    message = "Code error at:{0}:{1} in file {2}: {3}"
+                    line = diagnostic.location.line
+                    column = diagnostic.location.column
+                    info = diagnostic.spelling
+                    file = diagnostic.location.file.name
+                    raise utils.PtpException(message.format(line, column, file, info))
 
     def process_error(self, diagnostic):
-        print diagnostic.location, diagnostic.spelling
         location = diagnostic.location
         line = location.line
         for c in self.checks:

@@ -76,6 +76,7 @@ class TypeChecker:
 
         message = "Function '{0}' not defined for type '{1}'"
         if "token_name" in self.functions:
+
 #             decls = Declarations()
 #             decls.set(var, self.name + " &")
 #             check_method = ""#"std::string ____t = {0}.token_name();".format(var)
@@ -83,14 +84,22 @@ class TypeChecker:
 #                                    decls, source=source)
 #             check.own_message = message.format("token_name", self.name)
 #             tester.add(check)
-            #TODO: doplnit native typy
-            native_types = ["int", "bool", "char", "unsigned char", "unsigned int", "long",\
-                             "unsigned long", "long long", "unsigned long long", "double", "float", "std::string"]
-            if self.name not in native_types:
-                macro = base.tester.MacroDefinition("token_name", [self.name])
-                method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
-                func_definiton = base.tester.MethodOrMacroDefinition(method, macro)#"token_name", self.name, macro, "std::string", const = True)
-                tester.add_function_check(func_definiton)
+
+#             #TODO: doplnit native typy
+#             native_types = ["int", "bool", "char", "unsigned char", "unsigned int", "long",\
+#                              "unsigned long", "long long", "unsigned long long", "double", "float", "std::string"]
+
+#             if self.name not in native_types:
+#                 macro = base.tester.MacroDefinition("token_name", [self.name])
+#                 method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
+#                 func_definiton = base.tester.MethodOrMacroDefinition(method, macro)
+#                 tester.add_function_check(func_definiton)
+            #tester.add(base.tester.TokenNameChecker(self.name, source))
+
+            macro = base.tester.MacroDefinition("token_name", [self.name])
+            method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
+            func_definiton = base.tester.MethodOrMacroDefinition(method, macro)
+            tester.add_function_check(func_definiton)
 
         if "pack" in self.functions:
             decls = Declarations()
@@ -308,6 +317,7 @@ class HiddenNamespaceChecker(base.tester.Check):
             raise utils.PtpException(self.message, source)
         else:
             raise utils.PtpException(self.message, "") 
+
 
 class Checker:
 
