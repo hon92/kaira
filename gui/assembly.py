@@ -160,7 +160,7 @@ class Assembly():
                 continue
             if cursor.location.file.name != self.tu.spelling:
                 continue
-            if cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL]:
+            if cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
                 if cursor.spelling == name:
                     return Class(cursor)
         return None
@@ -172,7 +172,7 @@ class Assembly():
                 continue
             if cursor.location.file.name != self.tu.spelling:
                 continue
-            if cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL]:
+            if cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
                 classes.append(Class(cursor))
         return classes
 
