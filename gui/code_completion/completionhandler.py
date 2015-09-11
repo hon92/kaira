@@ -70,6 +70,9 @@ class HeadCompletionHandler(CompletionHandler):
         refactor_container = refactor.Refactor(self.editor)
         rename_manager = renamerefactor.RenameRefactorManager(self.completion)
         generate_manager = generaterefactor.GenerateRefactorManager(self.completion)
+        generate_manager.add_code_generator(generaterefactor.PackFnGenerator())
+        generate_manager.add_code_generator(generaterefactor.UnPackFnGenerator())
+        generate_manager.add_code_generator(generaterefactor.PackUnpackMacroGenerator())
         refactor_container.add_manager(rename_manager)
         refactor_container.add_manager(generate_manager)
 
