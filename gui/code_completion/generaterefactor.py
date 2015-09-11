@@ -20,110 +20,203 @@
 import clang.cindex as clang
 import gtk
 import assembly
+import ptp
+
+
+class CodeGenerator():
+    def __init__(self):
+        self.available = False
+
+    def get_menu_item(self):
+        pass
+
+    def get_code(self):
+        pass
+
+    def check_available(self, cursor):
+        pass
+
+    def get_code_position(self): # tuple (line, col)
+        pass
+
+class PackFnGenerator(CodeGenerator):
+    def __init__(self):
+        CodeGenerator.__init__(self)
+
+    def get_menu_item(self):
+        if not self.available:
+            return
+        gen_pack_fn = gtk.MenuItem("Pack function")
+        gen_pack_fn.set_tooltip_text("Create Pack function:\n{0}".format(self.get_code()))
+        return gen_pack_fn
+
+    def check_available(self, cursor):
+        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
+            self.cursor = cursor
+            self.available = True
+            return True
+        self.available = False
+        return False
+
+    def get_code(self):
+        writer = ptp.gencpp.writer.CppWriter()
+        declaration = "void pack(ca::Packer &packer) const"
+        code = ""
+        target_class = assembly.Class(self.cursor)
+        public_cursor = target_class.get_access_specifier("public")
+        class_attributes = [a.get_name() for a in target_class.get_fields()]
+
+        if len(class_attributes) > 0:
+            code = "\tpacker << " + " << ".join(class_attributes) + ";"
+
+        if not public_cursor:
+            writer.line("public:")
+
+        writer.indent_push()
+        writer.write_function(declaration, code)
+        return writer.get_string()
+
+    def get_code_position(self):
+        range = self.cursor.extent
+        line = range.end.line - 2
+        col = 0
+        return (line, col)
+
+
+class UnPackFnGenerator(CodeGenerator):
+    def __init__(self):
+        CodeGenerator.__init__(self)
+
+    def get_menu_item(self):
+        if not self.available:
+            return
+        gen_unpack_fn = gtk.MenuItem("Unpack function")
+        gen_unpack_fn.set_tooltip_text("Create Unpack function:\n{0}".format(self.get_code()))
+        return gen_unpack_fn
+
+    def check_available(self, cursor):
+        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
+            self.cursor = cursor
+            self.available = True
+            return True
+        self.available = False
+        return False
+
+    def get_code(self):
+        writer = ptp.gencpp.writer.CppWriter()
+        declaration = "void unpack(ca::Unpacker &unpacker)"
+        target_class = assembly.Class(self.cursor)
+        public_cursor = target_class.get_access_specifier("public")
+        class_attributes = [a.get_name() for a in target_class.get_fields()]
+        code = ""
+        if len(class_attributes) > 0:
+            code = "\tunpacker >> " + " >> ".join(class_attributes) + ";"
+
+        if not public_cursor:
+            writer.line("public:")
+
+        writer.indent_push()
+        writer.write_function(declaration, code)
+        return writer.get_string()
+
+    def get_code_position(self):
+        range = self.cursor.extent
+        line = range.end.line - 2
+        col = 0
+        return (line, col)
+
+class PackUnpackMacroGenerator(CodeGenerator):
+    def __init__(self):
+        CodeGenerator.__init__(self)
+
+    def get_menu_item(self):
+        if not self.available:
+            return
+        gen_pack_unpack_macro = gtk.MenuItem("Pack and Unpack macro")
+        gen_pack_unpack_macro.set_tooltip_text("Create Pack and Unpack macro:\n{0}".format(self.get_code()))
+        return gen_pack_unpack_macro
+
+    def check_available(self, cursor):
+        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
+            self.cursor = cursor
+            self.available = True
+            return True
+        self.available = False
+        return False
+
+    def get_code(self):
+        class_name = self.cursor.spelling
+        obj_name = class_name + "_val"
+        namespace = "namespace ca"
+        pack_m = "CA_PACK({0})".format(", ".join([class_name, "packer", obj_name]))
+        pack_m_code = ""
+
+        unpack_m = "CA_UNPACK({0})".format(", ".join([class_name, "unpacker", obj_name]))
+        unpack_m_code = ""
+
+        target_class = assembly.Class(self.cursor)
+        class_attributes = [a.get_name() for a in target_class.get_fields()]
+
+        if len(class_attributes) > 0:
+            data = [obj_name + "." + attr for attr in class_attributes]
+            pack_m_code = "\tpacker << " + " << ".join(data) + ";"
+            unpack_m_code = "\tunpacker >> " + " >> ".join(data) + ";"
+
+        writer = ptp.gencpp.writer.CppWriter()
+        writer.line(namespace)
+        writer.block_begin()
+        writer.indent_push()
+        writer.write_function(pack_m, pack_m_code)
+        writer.emptyline()
+        writer.write_function(unpack_m, unpack_m_code)
+        writer.indent_pop()
+        writer.block_end()
+        return writer.get_string()
+
+    def get_code_position(self):
+        range = self.cursor.extent
+        line = range.end.line
+        col = 0
+        return (line, col)
+
 
 class GenerateRefactorManager():
     def __init__(self, completion):
         self.completion = completion
         self.cursor = None
+        self.code_generators = []
 
-    def _check_selected_cursor(self):#maybe confirm cursor inside class and then select cursor referencend to that class
-        cursor = self.completion.get_cursor_under_mouse()
-        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL]:
-            self.cursor = cursor
-            return True
-        else:
-            return False
+    def add_code_generator(self, code_generator):
+        self.code_generators.append(code_generator)
 
-    def _insert_generated_code_to_buffer(self, code, insert_into_class):
+    def _insert_generated_code_to_buffer(self, generated_code, line, col = 0):
         buffer = self.completion.editor.buffer
-        end_location = self.cursor.extent.end
-        line = end_location.line - self.completion.parser.get_line_offset()
+        line -= self.completion.parser.get_line_offset()
+        iter = buffer.get_iter_at_line(line)
+        iter.set_line_offset(col)
+        chars_count = iter.get_chars_in_line()
+        iter.forward_chars(chars_count)
+        buffer.insert(iter, generated_code)
 
-        if insert_into_class:
-            line -= 2
-            iter = buffer.get_iter_at_line(line)
-            chars = iter.get_chars_in_line()
-            iter.forward_chars(chars)
-
-            selected_class = assembly.Class(self.cursor)
-            type = selected_class.get_type()
-            if type == "class":
-                specifier_cursor = selected_class.get_access_specifier("public")
-                if specifier_cursor:
-                    end_location = specifier_cursor.extent.end
-                    line = end_location.line - self.completion.parser.get_line_offset() + 1
-                    iter = buffer.get_iter_at_line(line)
-                    buffer.insert(iter, code)
-                else:
-                    buffer.insert(iter, "public:\n" + code)
-
-        else:
-            iter = buffer.get_iter_at_line(line)
-            buffer.insert(iter, code)
-
-    def _get_fields_names(self):
-        selected_class = assembly.Class(self.cursor)
-        fields = selected_class.get_fields()
-        names = []
-        for f in fields:
-            names.append(f.get_name())
-        return names
+    def run_generator(self, menu_item, generator):
+        code = generator.get_code()
+        line, col = generator.get_code_position()
+        self._insert_generated_code_to_buffer(code, line, col)
 
     def get_menu_item(self):
-        if not self._check_selected_cursor():
-            return
+        selected_cursor = self.completion.get_cursor_under_mouse()
 
-        menu_item = gtk.MenuItem("Generate Pack & Unpack")
+        menu_item = gtk.MenuItem("Generate")
         gen_menu = gtk.Menu()
-        gen_pack_fn = gtk.MenuItem("Generate Pack function")
-        gen_unpack_fn = gtk.MenuItem("Generate Unpack function")
-        gen_pack_unpack_macro = gtk.MenuItem("Generate Pack and Unpack macro")
+        for generator in self.code_generators:
+            if generator.check_available(selected_cursor):
+                gen_item = generator.get_menu_item()
+                if gen_item:
+                    print gen_item, generator
+                    gen_menu.add(gen_item)
+                    gen_item.connect("activate", self.run_generator, generator)
 
-        gen_pack_fn.connect("activate", lambda w: self.generate_pack_function())
-        gen_unpack_fn.connect("activate", lambda w: self.generate_unpack_function())
-        gen_pack_unpack_macro.connect("activate", lambda w: self.generate_pack_unpack_macro())
-
-        gen_menu.add(gen_pack_fn)
-        gen_menu.add(gen_unpack_fn)
-        gen_menu.add(gen_pack_unpack_macro)
+        if len(gen_menu) == 0:
+            return
         menu_item.set_submenu(gen_menu)
         return menu_item
-
-    def generate_pack_function(self):
-        pack_fn_pattern = "\nvoid pack(ca::Packer &packer) const\n{{\n\t{0}\n}}\n\n"
-        names = self._get_fields_names()
-        if len(names) > 0:
-            generated_code = pack_fn_pattern.format("packer << " + " << ".join(names) + ";")
-        else:
-            generated_code = pack_fn_pattern.format("")
-        print generated_code
-        self._insert_generated_code_to_buffer(generated_code, True)
-
-    def generate_unpack_function(self):
-        unpack_fn_pattern = "\nvoid unpack(ca::Unpacker &unpacker)\n{{\n\t{0}\n}}\n\n"
-        names = self._get_fields_names()
-        if len(names) > 0:
-            generated_code = unpack_fn_pattern.format("unpacker >> " + " >> ".join(names) + ";")
-        else:
-            generated_code = unpack_fn_pattern.format("")
-        print generated_code
-        self._insert_generated_code_to_buffer(generated_code, True)
-
-    def generate_pack_unpack_macro(self):
-        pack_macro_pattern = "\nnamespace ca\n{{\n\tCA_PACK({0})\n\t{{\n\t\t{1}\n\t}}\n\n\tCA_UNPACK({2})\n\t{{\n\t\t{3}\n\t}}\n}}\n\n"
-        names = self._get_fields_names()
-        class_name = self.cursor.spelling
-        obj_name = class_name + "_obj"
-
-        if len(names) > 0:
-            data = []
-            for n in names:
-                data.append(obj_name + "." + n)
-            generated_code = pack_macro_pattern.format(", ".join([class_name, "packer", obj_name]), "packer << " + " << ".join(data) + ";", \
-                                                        ", ".join([class_name, "unpacker", obj_name]), "unpacker >> " + " >> ".join(data) + ";")
-        else:
-            generated_code = pack_macro_pattern.format(", ".join([class_name, "packer", obj_name]), "", ", ".join([class_name, "unpacker", obj_name]), "")
-
-        print generated_code
-        self._insert_generated_code_to_buffer(generated_code, False)
-
