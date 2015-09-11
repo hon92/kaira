@@ -54,6 +54,38 @@ class CheckStatement(base.tester.Check):
     def throw_exception(self):
         raise utils.PtpException(self.message, self.source)
 
+
+class TokenNameChecker(base.tester.Check):
+    def __init__(self, class_name, source, method_def, macro_def):
+        self.source = source
+        self.class_name = class_name
+        self.obj_name = "__val"
+        self.fn_prefix = "__token_name_test"
+        self.id = self.new_id()
+        self.method_def = method_def
+        self.macro_def = macro_def
+
+    def set_checks(self, types_to_check, tester):
+        for type in types_to_check:
+            method_def = self.method_def.copy()
+            method_def.class_name = type
+            macro_def = self.macro_def.copy()
+            macro_def.parameters = [type]
+            tester.add_function_check(base.tester.MethodOrMacroDefinition(method_def, macro_def))
+
+    def write_prologue(self, writer):
+        writer.raw_text("void {0}{1}(const {2} &{3})\n{{\n".format(self.fn_prefix, self.id, self.class_name, self.obj_name))
+
+    def write_epilogue(self, writer):
+        writer.raw_text("}")
+
+    def write_content(self, writer):
+        writer.raw_text("\tca::token_name({0});\n".format(self.obj_name))
+
+    def throw_exception(self):
+        raise utils.PtpException(self.message, self.source)
+
+
 class TypeChecker:
 
     def __init__(self, name, source, functions):
@@ -76,30 +108,9 @@ class TypeChecker:
 
         message = "Function '{0}' not defined for type '{1}'"
         if "token_name" in self.functions:
-
-#             decls = Declarations()
-#             decls.set(var, self.name + " &")
-#             check_method = ""#"std::string ____t = {0}.token_name();".format(var)
-#             check = CheckStatement(check_method + "ca::token_name({0});".format(var),
-#                                    decls, source=source)
-#             check.own_message = message.format("token_name", self.name)
-#             tester.add(check)
-
-#             #TODO: doplnit native typy
-#             native_types = ["int", "bool", "char", "unsigned char", "unsigned int", "long",\
-#                              "unsigned long", "long long", "unsigned long long", "double", "float", "std::string"]
-
-#             if self.name not in native_types:
-#                 macro = base.tester.MacroDefinition("token_name", [self.name])
-#                 method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
-#                 func_definiton = base.tester.MethodOrMacroDefinition(method, macro)
-#                 tester.add_function_check(func_definiton)
-            #tester.add(base.tester.TokenNameChecker(self.name, source))
-
             macro = base.tester.MacroDefinition("token_name", [self.name])
             method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
-            func_definiton = base.tester.MethodOrMacroDefinition(method, macro)
-            tester.add_function_check(func_definiton)
+            tester.add_place_type_check(TokenNameChecker(self.name, source, method, macro))
 
         if "pack" in self.functions:
             decls = Declarations()
