@@ -56,9 +56,10 @@ class WarningHighLighRule(HighLightRule):
         HighLightRule.__init__(self, name)
 
     def set_properties(self):
-        self.tag.set_property("underline-set", True)
-        self.tag.set_property("underline", pango.UNDERLINE_SINGLE)
-        self.tag.set_property("foreground", "yellow")
+        pass
+#         self.tag.set_property("underline-set", True)
+#         self.tag.set_property("underline", pango.UNDERLINE_SINGLE)
+#         self.tag.set_property("foreground", "yellow")
 
 
 class Error():
@@ -102,8 +103,8 @@ class HighLightManager():
         view.set_mark_category_icon_from_pixbuf("warning", completion.icons["warning"])
         view.set_mark_category_priority("warning", 1)
         view.set_mark_category_priority("error", 2)
-        view.set_mark_category_background("error", gtk.gdk.Color(257 * 179, 257 * 147, 257 * 144))
-        view.set_mark_category_background("warning", gtk.gdk.Color(257 * 235, 257 * 214, 257 * 163))
+        view.set_mark_category_background("error", gtk.gdk.Color(257 * 255, 257 * 229, 257 * 229))
+        view.set_mark_category_background("warning", gtk.gdk.Color(257 * 255, 257 * 245, 257 * 189))
 
         def empty_fn():
             return True
