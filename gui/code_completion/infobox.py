@@ -195,12 +195,20 @@ class BasicWithErrorInfoBox(BasicInfoBox):
     def on_mouse_move(self, view, event):
         bx, by = self.view.window_to_buffer_coords(gtk.TEXT_WINDOW_TEXT, int(event.x), int(event.y))
         iter = self.view.get_iter_at_location(int(bx), int(by))
+        gutter = self.view.get_gutter(gtk.TEXT_WINDOW_LEFT)
+        widget_w = event.window.get_geometry()[2]
+        view_width = self.view.get_visible_rect().width
+        if view_width != widget_w:
+            self.timer.stop()
+            self.hide()
+            return
+
         line = iter.get_line()
         col = iter.get_line_offset()
         self.cursor = self.completion.parser.get_cursor(line, col)
         self.error = self.highlight_manager.get_error(line, col)
         self.show_box(event.x, event.y)
-        
+
     def set_data(self):
         if self.error:
             message_pattern = "Code error: {0}{1}"
