@@ -62,6 +62,8 @@ class SourceParser(gobject.GObject):
         interval = 1000
         self.timer = timer.Timer(interval, self.reparse)
         editor.buffer.connect_after("changed", self.code_changed)
+        self.parse_arguments = ["-I" + editor.app.project.get_directory()]
+        self.parse_arguments.extend(libclang_arguments)
 
     def _load_param_struct(self):
         generator = self.editor.app.project.get_generator(load_nets=False)
@@ -93,7 +95,7 @@ class SourceParser(gobject.GObject):
         self.code = self.get_code()
         unsaved_files = [(self.file, self.code)]
         if not self.tu:
-            self.tu = self.index.parse(self.file, libclang_arguments, unsaved_files, self.get_parsing_options())
+            self.tu = self.index.parse(self.file, self.parse_arguments, unsaved_files, self.get_parsing_options())
         else:
             self.tu.reparse(unsaved_files, self.get_parsing_options())
         self.parsed = True
@@ -136,7 +138,7 @@ class SourceParser(gobject.GObject):
             return None
 
     def get_arguments(self):
-        return libclang_arguments
+        return self.parse_arguments
 
 gobject.type_register(SourceParser)
 gobject.signal_new("reparsed", SourceParser, gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE, (gobject.TYPE_PYOBJECT,))
