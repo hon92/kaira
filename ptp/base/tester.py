@@ -25,7 +25,7 @@ import utils
 import assembly
 
 # types which are native supported by Kaira tool
-NATIVE_TYPES = ["int", "bool", "char", "unsigned char", "unsigned int", "long",\
+NATIVE_TYPES = ["int", "bool", "char", "unsigned char", "unsigned int", "long", "void *",\
                             "unsigned long", "long long", "unsigned long long", "double", "float", "std::string", "std::vector", "std::pair"]
 
 check_id_counter = 30000
@@ -197,7 +197,10 @@ class MacroDefinition():
 
     def check(self, function_checker):
         namespaces = function_checker.assembly.get_namespace("ca")
+        error_message = "Macro \"{0}\" not defined for type \"{1}\""
+
         if len(namespaces) == 0:
+            function_checker.set_throw_exception_data(error_message.format(self.name, self.parameters[0]))
             return False
         found_match = False
         functions_to_check = []
@@ -207,18 +210,21 @@ class MacroDefinition():
 
         for fn in functions_to_check:
             parameters = fn.get_parameters()
-
-            if len(parameters) < len(self.parameters):
+            if len(parameters) != len(self.parameters):
                 continue
             valid_parameters = True
             for i in range(len(self.parameters)):
                 p = parameters[i]
                 param_name = self.parameters[i]
                 valid = False
-                for pp in p.var_cursor.get_children():
-                    if pp.type.spelling == param_name:
-                        valid = True
-                        break
+                if self.parameters[0] in p.get_datatype():
+                    valid = True
+                    break
+#                 for pp in p.var_cursor.get_children():
+#                     print "type:", p.var_cursor.displayname, param_name, "PARAM:", self.parameters[0]
+#                     if pp.type.spelling == param_name:
+#                         valid = True
+#                         break
                 if not valid:
                     valid_parameters = False
                     break
@@ -229,7 +235,7 @@ class MacroDefinition():
                 found_match = True
                 break
             else:
-                function_checker.set_throw_exception_data("Macro \"{0}\" not defined for type \"{1}\"".format(self.name, self.parameters[0]))
+                function_checker.set_throw_exception_data(error_message.format(self.name, self.parameters[0]))
         return found_match
 
     def copy(self):
@@ -432,20 +438,55 @@ class ClangTester:
             all_tokens = [t.spelling for t in type_parameter.var_cursor.get_tokens()]
             tokens = []
             i = 1
+            temp = []
+
             while i != len(all_tokens) - 1:
                 t = all_tokens[i]
                 if t == "&":
                     break
-                if t == "::":
-                    nt = all_tokens[i - 1]
-                    st = t
-                    tt = all_tokens[i + 1]
-                    del tokens[-1]
-                    tokens.append(nt + st + tt)
+                elif t == "::":
+                    tokens.append(" ".join(temp))
+                    temp = []
+                    prev = tokens[-1]
+                    tokens[-1] = prev + t + all_tokens[i + 1]
                     i += 1
-                else:
+                elif t == "<" or t == ">":
+                    if temp:
+                        tokens.append(" ".join(temp))
+                        temp = []
                     tokens.append(t)
+                elif t == ",":
+                    if temp:
+                        tokens.append(" ".join(temp))
+                        temp = []
+                    tokens.append(t)
+                else:
+                    temp.append(t)
+#                 elif t == "::":
+#                     nt = all_tokens[i - 1]
+#                     st = t
+#                     tt = all_tokens[i + 1]
+#                     #del tokens[-1]
+#                     tokens.append(temp + st + tt)
+#                     temp = ""
+#                     i += 1
+#                 elif t != "<" and t != ">":
+#                     temp += t
+#                     
+#                 elif t == "<" or t == ">":
+#                     temp = ""
+#                     tokens.append(t)
+#                 if temp:
+#                     tokens.append(temp)
+#                     temp = ""
+                #else:
+                 #   tokens.append(temp)
+                  #  temp = ""
                 i += 1
+
+            if temp:
+                tokens.append(" ".join(temp))
+            #print "TYPE:", type_parameter.get_datatype(), "TOKENS:", tokens, "TEMP:", temp
 
             types = []
             off = -1
@@ -482,5 +523,7 @@ class ClangTester:
             place_fn = [f for f in functions if f.get_name().startswith(place_check.fn_prefix) and f.get_name().endswith(place_check.id)]
             parameter = place_fn[0].get_parameters()[0]
             types = get_types_to_check(parameter)
+            types = [t for t in types if t not in NATIVE_TYPES]
+            #print "types not in natives:", types
             place_check.set_checks(types, self)
 

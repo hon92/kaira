@@ -70,7 +70,7 @@ class TokenNameChecker(base.tester.Check):
             method_def = self.method_def.copy()
             method_def.class_name = type
             macro_def = self.macro_def.copy()
-            macro_def.parameters = [type]
+            macro_def.parameters = ["const " + type]
             tester.add_function_check(base.tester.MethodOrMacroDefinition(method_def, macro_def))
 
     def write_prologue(self, writer):
@@ -108,7 +108,7 @@ class TypeChecker:
 
         message = "Function '{0}' not defined for type '{1}'"
         if "token_name" in self.functions:
-            macro = base.tester.MacroDefinition("token_name", [self.name])
+            macro = base.tester.MacroDefinition("token_name", ["const " + self.name])
             method = base.tester.MethodDefinition("token_name", self.name, "std::string", const = True)
             tester.add_place_type_check(TokenNameChecker(self.name, source, method, macro))
 
