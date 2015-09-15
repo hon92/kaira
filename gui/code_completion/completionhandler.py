@@ -24,6 +24,9 @@ import refactor
 import renamerefactor
 import generaterefactor
 import infobox
+from sourceparser import loaded
+
+loaded # Do nothing, just make 'use' variable to suppress warning
 
 class CompletionHandler():
     def __init__(self, editor):

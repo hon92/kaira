@@ -566,14 +566,10 @@ class NetEditor(gtk.VBox):
         label = gtk.Label(name)
         self.attribute_box.pack_start(label, False, False)
         editor = self._add_attribute_code_editor(get_fn, set_fn)
-        if label.get_text() == "Type" and completion.loaded:
+        if label.get_text() == "Type" and ch.loaded:
             ch.LabelCompletionHandler(editor).load()
-#             editor.view.code_complete = completion.Completion(editor)
-           #editor.view.set_show_line_numbers(False)
-            #editor.view.code_complete.clang.set_type("")
         else:
             return editor
-        #return self._add_attribute_code_editor(get_fn, set_fn)
 
     def _add_attribute_checkbox_code_editor(
         self, name, bool_value, set_bool_fn, get_code_fn, set_code_fn):
