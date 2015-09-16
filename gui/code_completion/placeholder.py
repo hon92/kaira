@@ -80,6 +80,9 @@ class PlaceHolder(gtk.EventBox):
         if not last:
             return False
         start_iter = self.buffer.get_iter_at_mark(last.mark)
+        if not last._marks:
+            return True
+
         end_iter = self.buffer.get_iter_at_mark(last._marks[-1][0])
         s_offset = start_iter.get_offset()
         e_offset = end_iter.get_offset()
