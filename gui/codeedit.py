@@ -25,9 +25,7 @@ import gtk
 import pango
 import os
 import mainwindow
-import sourceview
 import textbuffer
-import completion
 from code_completion import completionhandler as ch
 
 class CodeEditor(gtk.ScrolledWindow):
@@ -57,7 +55,6 @@ class CodeEditor(gtk.ScrolledWindow):
     def _create_buffer(self, key, sections, head_paragraph):
         manager = gtksourceview.LanguageManager()
         lan = manager.get_language(key)
-        
         buffer = textbuffer.Buffer()
         buffer.create_tag("fixed", editable=False, background="lightgray")
         buffer.create_tag("normal")
@@ -95,7 +92,8 @@ class CodeEditor(gtk.ScrolledWindow):
         buffer.delete_mark(mark)
 
     def _create_view(self, buffer):
-        view = sourceview.View(buffer)
+        view = gtksourceview.View(buffer)
+        view.buffer = buffer
         view.set_auto_indent(True)
         font_desc = pango.FontDescription("monospace 10")
         if font_desc:

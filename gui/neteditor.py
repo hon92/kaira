@@ -33,7 +33,6 @@ import undo
 import codeedit
 import objectlist
 import tracing
-import completion
 from code_completion import completionhandler as ch
 
 def netname_dialog(net, mainwindow):

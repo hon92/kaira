@@ -26,18 +26,6 @@ class Buffer(gtksource.Buffer):
 
     def __init__(self):
         gtksource.Buffer.__init__(self)
-        self.init_tags()
-
-    def init_tags(self):
-        tag_table = self.get_property("tag_table")
-        error_tag = gtk.TextTag("error")
-        error_tag.set_property("underline-set", True)
-        error_tag.set_property("underline", pango.UNDERLINE_ERROR)
-        warning_tag = gtk.TextTag("warning")
-        warning_tag.set_property("underline-set", True)
-        warning_tag.set_property("underline",pango.UNDERLINE_SINGLE)
-        tag_table.add(error_tag)
-        tag_table.add(warning_tag)
 
     def get_all_text(self):
         return self.get_text(self.get_start_iter(), self.get_end_iter())

@@ -32,8 +32,8 @@ class CompletionProvider(gobject.GObject, gtksource.CompletionProvider):
     def set_proposals_count(self, value):
         self.proposals_count = value 
 
-    def do_get_info_widget(self, proposal):
-        pass
+#    def do_get_info_widget(self, proposal):
+#        pass
 #         window = self.completion.completion.get_info_window()
 #         window.props.default_width = 100
 #         window.props.shrink_width = False

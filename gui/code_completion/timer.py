@@ -37,7 +37,6 @@ class Timer():
     def start(self):
         if not self.running:
             self.source = gobject.timeout_add(self.interval, self._run)
-            #print "timer created " , self.source
             self.running = True
             self.source_set.add(self.source)
 
@@ -46,15 +45,8 @@ class Timer():
             if self.source in self.source_set:
                 removed = gobject.source_remove(self.source)
                 if removed:
-                    #print "removed", self.source
                     self.source_set.remove(self.source)
-                else:
-                    pass#print self.source ,"already finnished"
-            else:
-                pass
-                #print "eeeeeee"
             self.running = False
-            #assert len(self.source_set) == 0
 
     def restart(self):
         self.stop()

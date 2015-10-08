@@ -220,11 +220,7 @@ class MacroDefinition():
                 if self.parameters[0] in p.get_datatype():
                     valid = True
                     break
-#                 for pp in p.var_cursor.get_children():
-#                     print "type:", p.var_cursor.displayname, param_name, "PARAM:", self.parameters[0]
-#                     if pp.type.spelling == param_name:
-#                         valid = True
-#                         break
+
                 if not valid:
                     valid_parameters = False
                     break
@@ -381,7 +377,6 @@ class ClangTester:
     def process_diagnostics(self, diagnostics):
         for diagnostic in diagnostics:
             if diagnostic.severity > 2:
-                print diagnostic.location, diagnostic.spelling, [r for r in diagnostic.ranges]
                 if diagnostic.location.file.name == ClangTester.filename:
                     check_error = self.process_error(diagnostic)
                     if check_error:
@@ -462,31 +457,10 @@ class ClangTester:
                     tokens.append(t)
                 else:
                     temp.append(t)
-#                 elif t == "::":
-#                     nt = all_tokens[i - 1]
-#                     st = t
-#                     tt = all_tokens[i + 1]
-#                     #del tokens[-1]
-#                     tokens.append(temp + st + tt)
-#                     temp = ""
-#                     i += 1
-#                 elif t != "<" and t != ">":
-#                     temp += t
-#                     
-#                 elif t == "<" or t == ">":
-#                     temp = ""
-#                     tokens.append(t)
-#                 if temp:
-#                     tokens.append(temp)
-#                     temp = ""
-                #else:
-                 #   tokens.append(temp)
-                  #  temp = ""
                 i += 1
 
             if temp:
                 tokens.append(" ".join(temp))
-            #print "TYPE:", type_parameter.get_datatype(), "TOKENS:", tokens, "TEMP:", temp
 
             types = []
             off = -1
@@ -522,8 +496,6 @@ class ClangTester:
         for place_check in self.place_type_checks:
             place_fn = [f for f in functions if f.get_name().startswith(place_check.fn_prefix) and f.get_name().endswith(place_check.id)]
             parameter = place_fn[0].get_parameters()[0]
-            types = get_types_to_check(parameter)
-            types = [t for t in types if t not in NATIVE_TYPES]
-            #print "types not in natives:", types
+            types = [t for t in get_types_to_check(parameter) if t not in NATIVE_TYPES]
             place_check.set_checks(types, self)
 

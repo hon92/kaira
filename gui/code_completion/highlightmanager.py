@@ -169,8 +169,7 @@ class HighLightManager():
                         moved = end_iter.forward_char()
                         if not moved:
                             break
-                        
-                    #end_iter.forward_visible_word_end()
+
             else:
                 end_iter = self.buffer.get_iter_at_line(el)
                 end_iter.set_line_offset(ec)
@@ -178,7 +177,6 @@ class HighLightManager():
 
         #check can be showed in editor
         if not check_border(line, column):
-            print "line or column offset error"
             return None
 
         iter = self.buffer.get_iter_at_line(line)
@@ -195,7 +193,6 @@ class HighLightManager():
 
         range_fail = False
         for range in ranges:
-            print "---------", range.start, range.end
             start_location = range.start
             end_location = range.end
             if start_location.line == 0 and start_location.column == 0 and end_location.line == 0 and end_location.column == 0:
@@ -207,10 +204,8 @@ class HighLightManager():
             end_column = end_location.column - 1
 
             if (not check_border(start_line, start_column)) or (not check_border(end_line, end_column)):
-                print "clang error"
                 return None
             else:
-                print "clang valid position"
                 start_iter, end_iter = get_iters(start_line, start_column, end_line, end_column)
                 return (start_iter, end_iter, fix_hints)
 
@@ -220,10 +215,8 @@ class HighLightManager():
         return None
 
     def update(self, parser, tu):
-        #print "updated"
         self.clear()
         for diagnostic in tu.diagnostics:
-            print diagnostic
             severity = diagnostic.severity
             range = self.process_diagnostic(parser, diagnostic)
             if not range:
@@ -241,8 +234,6 @@ class HighLightManager():
                 self.error_map[sl].append(Error(message, sl, sc, el, ec, fix_hits))
             else:
                 self.error_map[sl] = [Error(message, sl, sc, el, ec, fix_hits)]
-
-            print "HIGHLIGHT:sl {0}, sc {1}, el {2}, ec {3}, ranges({4}), location [{5},{6}], fixes [{7}]".format(sl, sc, el, ec, [str(r.start.line) + " " + str(r.start.column) + " " + str(r.end.line) + " " + str(r.end.column) for r in diagnostic.ranges], diagnostic.location.line, diagnostic.location.column, [f.value for f in fix_hits])
 
             if severity == 4:
                 self.buffer.apply_tag_by_name("Error", start_iter, end_iter)

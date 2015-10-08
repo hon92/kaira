@@ -212,7 +212,6 @@ class GenerateRefactorManager():
             if generator.check_available(selected_cursor):
                 gen_item = generator.get_menu_item()
                 if gen_item:
-                    print gen_item, generator
                     gen_menu.add(gen_item)
                     gen_item.connect("activate", self.run_generator, generator)
 

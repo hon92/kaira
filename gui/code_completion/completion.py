@@ -89,10 +89,7 @@ class Completion():
 
     def on_populate(self, context):
         iter = context.get_iter()
-        import time
-        t = time.time()
         proposals = self.completer.get_proposals(iter)
-        print time.time() - t
         self.provider.set_proposals_count(len(proposals))
         context.props.completion.move_window(iter)
         context.add_proposals(self.provider, proposals, True)

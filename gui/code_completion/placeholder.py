@@ -168,7 +168,6 @@ class PlaceHolderInfo():
             self.index += 1
         else:
             self.index = 0
-        print self.index
         self.set_index(self.index)
 
     def dispose(self):
