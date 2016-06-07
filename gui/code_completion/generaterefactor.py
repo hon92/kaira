@@ -180,6 +180,83 @@ class PackUnpackMacroGenerator(CodeGenerator):
         return (line, col)
 
 
+class TokenNameGenerator(CodeGenerator):
+    def __init__(self):
+        CodeGenerator.__init__(self)
+
+    def get_menu_item(self):
+        if not self.available:
+            return
+        gen_tn_fn = gtk.MenuItem("TokenName function")
+        gen_tn_fn.set_tooltip_text("Create token_name function:\n{0}".format(self.get_code()))
+        return gen_tn_fn
+
+    def check_available(self, cursor):
+        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
+            self.cursor = cursor
+            self.available = True
+            return True
+        self.available = False
+        return False
+
+    def get_code(self):
+        writer = ptp.gencpp.writer.CppWriter()
+        declaration = "std::string token_name() const"
+        target_class = assembly.Class(self.cursor)
+        code = "return \"{0}\";"
+        code = code.format(target_class.class_cursor.spelling)
+        writer.indent_push()
+        writer.write_function(declaration, code)
+        return writer.get_string()
+
+    def get_code_position(self):
+        range = self.cursor.extent
+        line = range.end.line - 2
+        col = 0
+        return (line, col)
+
+
+class TokenNameMacroGenerator(CodeGenerator):
+    def __init__(self):
+        CodeGenerator.__init__(self)
+
+    def get_menu_item(self):
+        if not self.available:
+            return
+        gen_tn_macro = gtk.MenuItem("TokenName macro")
+        gen_tn_macro.set_tooltip_text("Create token_name macro:\n{0}".format(self.get_code()))
+        return gen_tn_macro
+
+    def check_available(self, cursor):
+        if cursor and cursor.kind in [clang.CursorKind.STRUCT_DECL, clang.CursorKind.CLASS_DECL, clang.CursorKind.UNION_DECL, clang.CursorKind.CLASS_TEMPLATE]:
+            self.cursor = cursor
+            self.available = True
+            return True
+        self.available = False
+        return False
+
+    def get_code(self):
+        class_name = self.cursor.spelling
+        obj_name = class_name + "_val"
+        namespace = "namespace ca"
+        tn_m = "CA_TOKEN_NAME({0}, {1})".format(class_name, obj_name)
+        code = "return \"{0}\";".format(class_name)
+        writer = ptp.gencpp.writer.CppWriter()
+        writer.line(namespace)
+        writer.block_begin()
+        writer.indent_push()
+        writer.write_function(tn_m, code)
+        writer.indent_pop()
+        writer.block_end()
+        return writer.get_string()
+
+    def get_code_position(self):
+        range = self.cursor.extent
+        line = range.end.line
+        col = 0
+        return (line, col)
+
+
 class GenerateRefactorManager():
     def __init__(self, completion):
         self.completion = completion
